@@ -16,4 +16,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/external/metal-cpp)
 
+find_package(spdlog REQUIRED)
+link_libraries(spdlog::spdlog)
+
 add_subdirectory(src)

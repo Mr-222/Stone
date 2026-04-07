@@ -1,3 +1,5 @@
+add_subdirectory(Utility)
+
 set(SOURCES
         main.mm
         MetalInit.cpp
@@ -12,6 +14,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
+        Utility
         glfw
         "-framework Metal"
         "-framework Foundation"

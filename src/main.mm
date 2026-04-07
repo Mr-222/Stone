@@ -8,12 +8,11 @@
 
 #include <iostream>
 
-#include <objc/message.h>
+#include "Logger.h"
 
 int main() {
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW!" << std::endl;
-        return -1;
+        LOG_ERROR("Failed to initialize GLFW!");
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -23,17 +22,15 @@ int main() {
     int height = 600;
     GLFWwindow* window = glfwCreateWindow(width, height, "My Metal Renderer", nullptr, nullptr);
     if (!window) {
-        std::cerr << "Failed to create GLFW window!" << std::endl;
         glfwTerminate();
-        return -1;
+        LOG_ERROR("Failed to create GLFW window!");
     }
 
     MTL::Device* device = MTL::CreateSystemDefaultDevice();
     if (!device) {
-        std::cerr << "Failed to find a compatible Metal device!" << std::endl;
         glfwDestroyWindow(window);
         glfwTerminate();
-        return -1;
+        LOG_ERROR("Failed to find a compatible Metal device!");
     }
 
     MTL::CommandQueue* commandQueue = device->newCommandQueue();

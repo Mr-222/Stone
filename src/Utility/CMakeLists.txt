@@ -3,5 +3,7 @@ add_library(Utility STATIC
 )
 
 target_include_directories(Utility PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/src
 )
+
+target_link_libraries(Utility PUBLIC spdlog::spdlog)

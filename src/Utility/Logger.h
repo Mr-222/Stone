@@ -13,7 +13,7 @@ public:
     Logger(Logger const&) = delete;
     Logger& operator=(Logger const&) = delete;
 
-    inline std::shared_ptr<spdlog::logger>& GetLogger() { return m_logger; }
+    const std::shared_ptr<spdlog::logger>& GetLogger() const { return m_logger; }
 
 private:
     Logger();
@@ -22,6 +22,41 @@ private:
     std::shared_ptr<spdlog::logger> m_logger;
 };
 
-#define LOG_INFO(...) Logger::GetInstance().GetLogger()->info(__VA_ARGS__)
-#define LOG_WARN(...) Logger::GetInstance().GetLogger()->warn(__VA_ARGS__)
-#define LOG_ERROR(...) Logger::GetInstance().GetLogger()->error(__VA_ARGS__)
+#ifndef NDEBUG
+
+#define LOG_INFO(fmt, ...) Logger::GetInstance().GetLogger()->info(fmt __VA_OPT__(,) __VA_ARGS__)
+#define LOG_WARN(fmt, ...) Logger::GetInstance().GetLogger()->warn(fmt __VA_OPT__(,) __VA_ARGS__)
+#define LOG_ERROR(fmt, ...) Logger::GetInstance().GetLogger()->error(fmt __VA_OPT__(,) __VA_ARGS__)
+
+#define LOG_INFO_IF(condition, fmt, ...) \
+    do { \
+        if (condition) { \
+            Logger::GetInstance().GetLogger()->info(fmt __VA_OPT__(,) __VA_ARGS__); \
+        } \
+    } while (0)
+
+#define LOG_WARN_IF(condition, fmt, ...) \
+    do { \
+        if (condition) { \
+            Logger::GetInstance().GetLogger()->warn(fmt __VA_OPT__(,) __VA_ARGS__); \
+        } \
+    } while (0)
+
+#define LOG_ERROR_IF(condition, fmt, ...) \
+    do { \
+        if (condition) { \
+            Logger::GetInstance().GetLogger()->error(fmt __VA_OPT__(,) __VA_ARGS__); \
+        } \
+    } while (0)
+
+#else
+
+#define LOG_INFO(...)                do {} while (0)
+#define LOG_WARN(...)                do {} while (0)
+#define LOG_ERROR(...)               do {} while (0)
+
+#define LOG_INFO_IF(condition, ...)  do {} while (0)
+#define LOG_WARN_IF(condition, ...)  do {} while (0)
+#define LOG_ERROR_IF(condition, ...) do {} while (0)
+
+#endif

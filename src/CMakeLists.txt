@@ -1,5 +1,6 @@
 find_package(glfw3 REQUIRED)
 find_package(spdlog REQUIRED)
+find_package(glm REQUIRED)
 
 add_subdirectory(Utility)
 add_subdirectory(Core)

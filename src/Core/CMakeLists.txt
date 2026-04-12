@@ -1,6 +1,6 @@
 add_library(Core STATIC
         MetalInit.cpp
-        MetalContext.cpp
+        MetalContext.mm
         Window.mm
 )
 

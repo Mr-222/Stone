@@ -1,0 +1,20 @@
+add_library(Core STATIC
+        MetalInit.cpp
+        MetalContext.mm
+        Window.mm
+)
+
+target_include_directories(Core PUBLIC
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/External/metal-cpp
+)
+
+target_link_libraries(Core PRIVATE
+        Utility
+        glfw
+        "-framework Metal"
+        "-framework Foundation"
+        "-framework QuartzCore"
+        "-framework AppKit"
+        "-framework Cocoa"
+)

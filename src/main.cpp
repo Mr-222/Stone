@@ -8,7 +8,6 @@ int main() {
 #endif
 
     Renderer renderer;
-    renderer.Init();
     renderer.Run();
 
     return 0;

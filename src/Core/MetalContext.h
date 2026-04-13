@@ -4,21 +4,22 @@
 #include <Metal/Metal.hpp>
 #include <QuartzCore/QuartzCore.hpp>
 #include <dispatch/dispatch.h>
+#include <vector>
 
-inline constexpr uint MAX_FRAMES_IN_FLIGHT = 3;
+#include "Core/Window.h"
 
 class MetalContext {
 public:
-    MetalContext() = default;
+    MetalContext(CA::MetalLayer* metalLayer);
     ~MetalContext() = default;
 
     void Init(CA::MetalLayer* metalLayer);
     void BeginFrame();
-    void EndFrame();
+    void EndFrame(const std::vector<MTL4::CommandBuffer*>& buffers);
 
     MTL::Device* GetDevice() const { return m_device.get(); }
     CA::MetalDrawable* GetCurrentDrawable() const { return m_currentDrawable; }
-    MTL4::CommandBuffer* GetCommandBuffer() const { return m_commandBuffer.get(); }
+    MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT].get(); }
 
 private:
     NS::SharedPtr<MTL::Device> m_device;
@@ -31,7 +32,6 @@ private:
     NS::SharedPtr<MTL::SharedEventListener> m_eventListener;
 
     NS::SharedPtr<MTL4::CommandAllocator> m_commandAllocators[MAX_FRAMES_IN_FLIGHT];
-    NS::SharedPtr<MTL4::CommandBuffer> m_commandBuffer;
 
     NS::SharedPtr<CA::MetalLayer> m_swapchain;
     CA::MetalDrawable* m_currentDrawable;

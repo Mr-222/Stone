@@ -1,8 +1,9 @@
-#include "Core/MetalContext.h"
+#include "MetalContext.h"
 
 #include "Utility/Logger.h"
+#include "Core/CommandBufferPool.h"
 
-void MetalContext::Init(CA::MetalLayer* metalLayer) {
+MetalContext::MetalContext(CA::MetalLayer* metalLayer) {
     m_device = NS::TransferPtr(MTL::CreateSystemDefaultDevice());
     m_queue = NS::TransferPtr(m_device->newMTL4CommandQueue());
 
@@ -13,8 +14,6 @@ void MetalContext::Init(CA::MetalLayer* metalLayer) {
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         m_commandAllocators[i] = NS::TransferPtr(m_device->newCommandAllocator());
     }
-
-    m_commandBuffer = NS::TransferPtr(m_device->newCommandBuffer());
 
     m_swapchain = NS::RetainPtr(metalLayer);
     m_swapchain->setDevice(m_device.get());
@@ -33,14 +32,11 @@ void MetalContext::BeginFrame() {
 
     const uint32_t bufferIndex = static_cast<uint32_t>(m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT);
     m_commandAllocators[bufferIndex]->reset();
-
-    m_commandBuffer->beginCommandBuffer(m_commandAllocators[bufferIndex].get());
 }
 
-void MetalContext::EndFrame() {
-    m_commandBuffer->endCommandBuffer();
-    MTL4::CommandBuffer* bufferToSubmit[] = { m_commandBuffer.get() };
-    m_queue->commit(bufferToSubmit, 1);
+void MetalContext::EndFrame(const std::vector<MTL4::CommandBuffer*>& buffers) {
+    if (!buffers.empty())
+        m_queue->commit(buffers.data(), buffers.size());
 
     // Tell the GPU to return the token when it's done
     uint64_t signalValue = m_currentFrameIndex + 1;

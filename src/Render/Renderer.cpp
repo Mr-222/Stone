@@ -1,10 +1,11 @@
-#include "Render/Renderer.h"
+#include "Renderer.h"
 
 #include <array>
 #include <glm/glm.hpp>
 
 #include "Core/MetalContext.h"
 #include "Core/Window.h"
+#include "Core/CommandBufferPool.h"
 #include "Utility/Logger.h"
 
 constexpr const char* kTriangleShaderLibrary = STONE_SHADER_DIR "/Triangle.metallib";
@@ -16,7 +17,16 @@ MTL::Buffer* m_argumentBuffer = nullptr;
 MTL::Buffer* m_positionBuffer = nullptr;
 MTL::Buffer* m_colorBuffer = nullptr;
 
-Renderer::Renderer() = default;
+Renderer::Renderer() {
+    m_window = std::make_unique<Window>(500, 500);
+    m_metalContext = std::make_unique<MetalContext>(m_window->GetCAMetalLayer());
+    m_commandBufferPool = std::make_unique<CommandBufferPool>(64, *m_metalContext);
+
+    m_commandBuffer = m_commandBufferPool->Acquire();
+
+    Setup();
+}
+
 Renderer::~Renderer() {
     if (m_argumentBuffer) {
         m_argumentBuffer->release();
@@ -38,22 +48,13 @@ Renderer::~Renderer() {
     }
 }
 
-void Renderer::Init() {
-    m_window = std::make_unique<Window>(500, 500);
-
-    m_metalContext = std::make_unique<MetalContext>();
-    m_metalContext->Init(m_window->GetCAMetalLayer());
-
-    Setup();
-}
-
 void Renderer::Run() {
     while (!m_window->ShouldClose()) {
         m_window->PollEvents();
 
         m_metalContext->BeginFrame();
         DoRender();
-        m_metalContext->EndFrame();
+        m_metalContext->EndFrame({ m_commandBuffer });
     }
 }
 
@@ -146,9 +147,9 @@ void Renderer::Setup() {
 void Renderer::DoRender() {
     NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
 
-    MTL4::CommandBuffer* cmd = m_metalContext->GetCommandBuffer();
+    m_commandBuffer->beginCommandBuffer(m_metalContext->GetCurrentAllocator());
 
-    cmd->useResidencySet(m_residencySet);
+    m_commandBuffer->useResidencySet(m_residencySet);
 
     MTL4::RenderPassDescriptor* passDescriptor = MTL4::RenderPassDescriptor::alloc()->init()->autorelease();
     MTL::RenderPassColorAttachmentDescriptor* colorAttachment = passDescriptor->colorAttachments()->object(0);
@@ -158,7 +159,7 @@ void Renderer::DoRender() {
     colorAttachment->setClearColor(MTL::ClearColor::Make(0.1, 0.2, 0.3, 1.0));
     colorAttachment->setStoreAction(MTL::StoreActionStore);
 
-    MTL4::RenderCommandEncoder* commandEncoder = cmd->renderCommandEncoder(passDescriptor);
+    MTL4::RenderCommandEncoder* commandEncoder = m_commandBuffer->renderCommandEncoder(passDescriptor);
     MTL::Texture* drawableTexture = m_metalContext->GetCurrentDrawable()->texture();
     MTL::Viewport viewport { 0.0, 0.0, static_cast<double>(drawableTexture->width()), static_cast<double>(drawableTexture->height()), 0.0, 1.0 };
 
@@ -173,6 +174,8 @@ void Renderer::DoRender() {
     commandEncoder->setArgumentTable(m_argumentTable, MTL::RenderStageVertex);
     commandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, 0, 3);
     commandEncoder->endEncoding();
+
+    m_commandBuffer->endCommandBuffer();
 
     pool->release();
 }

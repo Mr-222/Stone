@@ -17,22 +17,22 @@ public:
     void BeginFrame();
     void EndFrame(const std::vector<MTL4::CommandBuffer*>& buffers);
 
-    MTL::Device* GetDevice() const { return m_device.get(); }
+    MTL::Device* GetDevice() const { return m_device; }
     CA::MetalDrawable* GetCurrentDrawable() const { return m_currentDrawable; }
-    MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT].get(); }
+    MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT]; }
 
 private:
-    NS::SharedPtr<MTL::Device> m_device;
-    NS::SharedPtr<MTL4::CommandQueue> m_queue;
+    MTL::Device* m_device;
+    MTL4::CommandQueue* m_queue;
 
     // Synchronization primitives
     dispatch_semaphore_t m_frameBoundarySemaphore = nullptr;
     uint64_t m_currentFrameIndex = 0;
-    NS::SharedPtr<MTL::SharedEvent> m_frameEvent;
-    NS::SharedPtr<MTL::SharedEventListener> m_eventListener;
+    MTL::SharedEvent* m_frameEvent;
+    MTL::SharedEventListener* m_eventListener;
 
-    NS::SharedPtr<MTL4::CommandAllocator> m_commandAllocators[MAX_FRAMES_IN_FLIGHT];
+    MTL4::CommandAllocator* m_commandAllocators[MAX_FRAMES_IN_FLIGHT];
 
-    NS::SharedPtr<CA::MetalLayer> m_swapchain;
+    CA::MetalLayer* m_swapchain;
     CA::MetalDrawable* m_currentDrawable;
 };

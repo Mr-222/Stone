@@ -1,6 +1,6 @@
 #include "CommandBufferPool.h"
 
-#include "Utility/logger.h"
+#include "Utility/Logger.h"
 
 CommandBufferPool::CommandBufferPool(size_t cap, const MetalContext &context)
     : capacity(cap), count(cap), context(context)

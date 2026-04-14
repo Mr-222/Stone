@@ -24,6 +24,19 @@ CommandBuffer CommandBufferPool::Acquire() {
     return CommandBuffer(buffer, m_context.GetCurrentAllocator(), this, false);
 }
 
+CommandBuffer CommandBufferPool::AcquireFlushGPU() {
+    std::unique_lock lock(m_mtx);
+
+    m_cv.wait(lock, [this] { return m_count > 0; });
+
+    MTL4::CommandBuffer* buffer = m_pool[m_head];
+
+    m_head = (m_head + 1) % m_capacity;
+    m_count--;
+
+    return CommandBuffer(buffer, m_context.GetCurrentAllocator(), this, true);
+}
+
 void CommandBufferPool::Release(MTL4::CommandBuffer* buffer) {
     std::unique_lock lock(m_mtx);
 

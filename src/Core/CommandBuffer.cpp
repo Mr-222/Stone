@@ -4,18 +4,29 @@
 
 #include "Core/CommandBufferPool.h"
 
-CommandBuffer::CommandBuffer(MTL4::CommandBuffer* cmd, MTL4::CommandAllocator* allocator, CommandBufferPool* pool, bool flush = false)
-    : m_commandBuffer(cmd), m_allocator(allocator), m_pool(pool), m_flushGPU(flush) {}
+CommandBuffer::CommandBuffer(MTL4::CommandBuffer* cmd, MTL4::CommandAllocator* allocator, CommandBufferPool* pool, bool flush)
+    : m_commandBuffer(cmd), m_allocator(allocator), m_pool(pool), m_flushGPU(flush), m_hasBegun(false) {}
 
 CommandBuffer::~CommandBuffer() {
     if (m_pool && m_commandBuffer)
         m_pool->Release(m_commandBuffer);
 }
 
-MTL4::RenderCommandEncoder* CommandBuffer::BeginRenderPass(MTL4::RenderPassDescriptor* desc, MTL::ResidencySet* set) const {
-    m_commandBuffer->beginCommandBuffer(m_allocator);
+MTL4::RenderCommandEncoder* CommandBuffer::BeginRenderPass(MTL4::RenderPassDescriptor* desc, MTL::ResidencySet* set) {
+    if (!m_hasBegun) {
+        m_hasBegun = true;
+        m_commandBuffer->beginCommandBuffer(m_allocator);
+    }
     m_commandBuffer->useResidencySet(set);
     return m_commandBuffer->renderCommandEncoder(desc);
+}
+
+MTL4::ComputeCommandEncoder* CommandBuffer::BeginBlitPass() {
+    if (!m_hasBegun) {
+        m_hasBegun = true;
+        m_commandBuffer->beginCommandBuffer(m_allocator);
+    }
+    return m_commandBuffer->computeCommandEncoder();
 }
 
 void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) const {

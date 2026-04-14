@@ -6,6 +6,7 @@
 #include "Core/MetalContext.h"
 #include "Core/Window.h"
 #include "Core/CommandBufferPool.h"
+#include "Core/Buffer.h"
 #include "Utility/Logger.h"
 
 constexpr const char* kTriangleShaderLibrary = STONE_SHADER_DIR "/Triangle.metallib";
@@ -14,8 +15,10 @@ MTL::RenderPipelineState* m_pipelineState = nullptr;
 MTL4::ArgumentTable* m_argumentTable = nullptr;
 MTL::ResidencySet* m_residencySet = nullptr;
 MTL::Buffer* m_argumentBuffer = nullptr;
-MTL::Buffer* m_positionBuffer = nullptr;
-MTL::Buffer* m_colorBuffer = nullptr;
+Buffer* m_positionBuffer = nullptr;
+Buffer* m_colorBuffer = nullptr;
+
+Renderer::~Renderer() = default;
 
 Renderer::Renderer() {
     m_window = std::make_unique<Window>(500, 500);
@@ -23,27 +26,6 @@ Renderer::Renderer() {
     m_commandBufferPool = std::make_unique<CommandBufferPool>(64, *m_metalContext);
 
     Setup();
-}
-
-Renderer::~Renderer() {
-    if (m_argumentBuffer) {
-        m_argumentBuffer->release();
-    }
-    if (m_colorBuffer) {
-        m_colorBuffer->release();
-    }
-    if (m_positionBuffer) {
-        m_positionBuffer->release();
-    }
-    if (m_residencySet) {
-        m_residencySet->release();
-    }
-    if (m_argumentTable) {
-        m_argumentTable->release();
-    }
-    if (m_pipelineState) {
-        m_pipelineState->release();
-    }
 }
 
 void Renderer::Run() {
@@ -107,15 +89,19 @@ void Renderer::Setup() {
         { 0.f, 0.f, 1.f, 1.f },
     }};
 
-    m_positionBuffer = device->newBuffer(positions.data(), sizeof(positions), MTL::ResourceStorageModeShared);
-    m_colorBuffer = device->newBuffer(colors.data(), sizeof(colors), MTL::ResourceStorageModeShared);
-    LOG_ERROR_IF(!m_positionBuffer || !m_colorBuffer, "Failed to allocate triangle buffers");
+    Buffer positionBufferCopy = Buffer(m_metalContext->GetDevice(), positions.data(), sizeof(positions), MTL::ResourceStorageModeShared);
+    Buffer colorBufferCopy = Buffer(m_metalContext->GetDevice(), colors.data(), sizeof(colors), MTL::ResourceStorageModeShared);
+    m_positionBuffer = new Buffer(m_metalContext->GetDevice(), sizeof(positions), MTL::ResourceStorageModePrivate);
+    m_colorBuffer = new Buffer(m_metalContext->GetDevice(), sizeof(colors), MTL::ResourceStorageModePrivate);
+    m_positionBuffer->UploadFromFlush(positionBufferCopy, *m_commandBufferPool, m_metalContext->GetCommandQueue());
+    m_colorBuffer->UploadFromFlush(colorBufferCopy, *m_commandBufferPool, m_metalContext->GetCommandQueue());
+    LOG_ERROR_IF(!m_positionBuffer->GetNativeBuffer() || !m_colorBuffer->GetNativeBuffer(), "Failed to allocate triangle buffers");
 
     m_argumentBuffer = device->newBuffer(argumentEncoder->encodedLength(), MTL::ResourceStorageModeShared);
 
     argumentEncoder->setArgumentBuffer(m_argumentBuffer, 0);
-    argumentEncoder->setBuffer(m_positionBuffer, 0, 0);
-    argumentEncoder->setBuffer(m_colorBuffer, 0, 1);
+    argumentEncoder->setBuffer(m_positionBuffer->GetNativeBuffer(), 0, 0);
+    argumentEncoder->setBuffer(m_colorBuffer->GetNativeBuffer(), 0, 1);
 
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("Triangle Argument Table", NS::UTF8StringEncoding));
@@ -130,8 +116,8 @@ void Renderer::Setup() {
     MTL::ResidencySetDescriptor* rsDesc = MTL::ResidencySetDescriptor::alloc()->init()->autorelease();
     m_residencySet = device->newResidencySet(rsDesc, &error);
     m_residencySet->addAllocation(m_argumentBuffer);
-    m_residencySet->addAllocation(m_positionBuffer);
-    m_residencySet->addAllocation(m_colorBuffer);
+    m_residencySet->addAllocation(m_positionBuffer->GetNativeBuffer());
+    m_residencySet->addAllocation(m_colorBuffer->GetNativeBuffer());
     m_residencySet->commit();
 
     argumentEncoder->release();

@@ -5,6 +5,8 @@ add_library(Core STATIC
         CommandBufferPool.cpp
         CommandBuffer.cpp
         CommandBuffer.h
+        Buffer.cpp
+        Buffer.h
 )
 
 target_include_directories(Core PUBLIC

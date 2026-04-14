@@ -16,6 +16,7 @@ public:
     CommandBufferPool(size_t cap, const MetalContext& context);
 
     CommandBuffer Acquire();
+    CommandBuffer AcquireFlushGPU();
 
 private:
     friend class CommandBuffer;

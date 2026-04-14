@@ -13,11 +13,12 @@ public:
 
     void Init(CA::MetalLayer* metalLayer);
     void BeginFrame();
-    void EndFrame(const std::vector<MTL4::CommandBuffer*>& buffers);
+    void EndFrame();
 
     MTL::Device* GetDevice() const { return m_device; }
     CA::MetalDrawable* GetCurrentDrawable() const { return m_currentDrawable; }
     MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT]; }
+    MTL4::CommandQueue* GetCommandQueue() const { return m_queue; }
 
 private:
     MTL::Device* m_device;

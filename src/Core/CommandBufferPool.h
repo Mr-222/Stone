@@ -9,25 +9,28 @@
 #include <vector>
 
 #include <Core/MetalContext.h>
+#include <Core/CommandBuffer.h>
 
 class CommandBufferPool {
 public:
     CommandBufferPool(size_t cap, const MetalContext& context);
 
-    MTL4::CommandBuffer* Acquire();
-    void Release(MTL4::CommandBuffer* buffer);
+    CommandBuffer Acquire();
 
 private:
-    const MetalContext& context;
+    friend class CommandBuffer;
+    void Release(MTL4::CommandBuffer* buffer);
 
-    std::vector<MTL4::CommandBuffer*> pool;
-    size_t capacity;
+    const MetalContext& m_context;
 
-    size_t head = 0;
-    size_t tail = 0;
-    size_t count;
+    std::vector<MTL4::CommandBuffer*> m_pool;
+    size_t m_capacity;
 
-    std::mutex mtx;
-    std::condition_variable cv;
+    size_t m_head = 0;
+    size_t m_tail = 0;
+    size_t m_count;
+
+    std::mutex m_mtx;
+    std::condition_variable m_cv;
 };
 

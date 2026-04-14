@@ -34,10 +34,7 @@ void MetalContext::BeginFrame() {
     m_commandAllocators[bufferIndex]->reset();
 }
 
-void MetalContext::EndFrame(const std::vector<MTL4::CommandBuffer*>& buffers) {
-    if (!buffers.empty())
-        m_queue->commit(buffers.data(), buffers.size());
-
+void MetalContext::EndFrame() {
     // Tell the GPU to return the token when it's done
     uint64_t signalValue = m_currentFrameIndex + 1;
     dispatch_semaphore_t blockSema = m_frameBoundarySemaphore;

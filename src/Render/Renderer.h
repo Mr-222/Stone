@@ -23,6 +23,4 @@ private:
     std::unique_ptr<MetalContext> m_metalContext;
     std::unique_ptr<Window> m_window;
     std::unique_ptr<CommandBufferPool> m_commandBufferPool;
-
-    MTL4::CommandBuffer* m_commandBuffer;
 };

@@ -22,8 +22,6 @@ Renderer::Renderer() {
     m_metalContext = std::make_unique<MetalContext>(m_window->GetCAMetalLayer());
     m_commandBufferPool = std::make_unique<CommandBufferPool>(64, *m_metalContext);
 
-    m_commandBuffer = m_commandBufferPool->Acquire();
-
     Setup();
 }
 
@@ -54,7 +52,7 @@ void Renderer::Run() {
 
         m_metalContext->BeginFrame();
         DoRender();
-        m_metalContext->EndFrame({ m_commandBuffer });
+        m_metalContext->EndFrame();
     }
 }
 
@@ -147,9 +145,7 @@ void Renderer::Setup() {
 void Renderer::DoRender() {
     NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
 
-    m_commandBuffer->beginCommandBuffer(m_metalContext->GetCurrentAllocator());
-
-    m_commandBuffer->useResidencySet(m_residencySet);
+    CommandBuffer cmd = m_commandBufferPool->Acquire();
 
     MTL4::RenderPassDescriptor* passDescriptor = MTL4::RenderPassDescriptor::alloc()->init()->autorelease();
     MTL::RenderPassColorAttachmentDescriptor* colorAttachment = passDescriptor->colorAttachments()->object(0);
@@ -159,7 +155,7 @@ void Renderer::DoRender() {
     colorAttachment->setClearColor(MTL::ClearColor::Make(0.1, 0.2, 0.3, 1.0));
     colorAttachment->setStoreAction(MTL::StoreActionStore);
 
-    MTL4::RenderCommandEncoder* commandEncoder = m_commandBuffer->renderCommandEncoder(passDescriptor);
+    MTL4::RenderCommandEncoder* commandEncoder = cmd.BeginRenderPass(passDescriptor, m_residencySet);
     MTL::Texture* drawableTexture = m_metalContext->GetCurrentDrawable()->texture();
     MTL::Viewport viewport { 0.0, 0.0, static_cast<double>(drawableTexture->width()), static_cast<double>(drawableTexture->height()), 0.0, 1.0 };
 
@@ -175,7 +171,7 @@ void Renderer::DoRender() {
     commandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, 0, 3);
     commandEncoder->endEncoding();
 
-    m_commandBuffer->endCommandBuffer();
+    cmd.SubmitTo(m_metalContext->GetCommandQueue());
 
     pool->release();
 }

@@ -3,37 +3,37 @@
 #include "Utility/Logger.h"
 
 CommandBufferPool::CommandBufferPool(size_t cap, const MetalContext &context)
-    : capacity(cap), count(cap), context(context)
+    : m_capacity(cap), m_count(cap), m_context(context)
 {
-    pool.resize(cap);
+    m_pool.resize(cap);
     MTL::Device* device = context.GetDevice();
     for (size_t i = 0; i < cap; i++)
-        pool[i] = device->newCommandBuffer();
+        m_pool[i] = device->newCommandBuffer();
 }
 
-MTL4::CommandBuffer *CommandBufferPool::Acquire() {
-    std::unique_lock lock(mtx);
+CommandBuffer CommandBufferPool::Acquire() {
+    std::unique_lock lock(m_mtx);
 
-    cv.wait(lock, [this] { return count > 0; });
+    m_cv.wait(lock, [this] { return m_count > 0; });
 
-    MTL4::CommandBuffer* buffer = pool[head];
+    MTL4::CommandBuffer* buffer = m_pool[m_head];
 
-    head = (head + 1) % capacity;
-    count--;
+    m_head = (m_head + 1) % m_capacity;
+    m_count--;
 
-    return buffer;
+    return CommandBuffer(buffer, m_context.GetCurrentAllocator(), this, false);
 }
 
 void CommandBufferPool::Release(MTL4::CommandBuffer* buffer) {
-    std::unique_lock lock(mtx);
+    std::unique_lock lock(m_mtx);
 
-    LOG_ERROR_IF(count == capacity, "Command buffer pool is already full! Cannot release buffer.");
+    LOG_ERROR_IF(m_count == m_capacity, "Command buffer pool is already full! Cannot release buffer.");
 
-    pool[tail] = buffer;
+    m_pool[m_tail] = buffer;
 
-    tail = (tail + 1) % capacity;
-    count++;
+    m_tail = (m_tail + 1) % m_capacity;
+    m_count++;
 
     lock.unlock();
-    cv.notify_one();
+    m_cv.notify_one();
 }

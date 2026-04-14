@@ -3,6 +3,8 @@ add_library(Core STATIC
         MetalContext.mm
         Window.mm
         CommandBufferPool.cpp
+        CommandBuffer.cpp
+        CommandBuffer.h
 )
 
 target_include_directories(Core PUBLIC

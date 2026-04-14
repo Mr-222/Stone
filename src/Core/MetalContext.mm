@@ -1,23 +1,22 @@
-#include "Core/MetalContext.h"
+#include "MetalContext.h"
 
 #include "Utility/Logger.h"
+#include "Core/CommandBufferPool.h"
 
-void MetalContext::Init(CA::MetalLayer* metalLayer) {
-    m_device = NS::TransferPtr(MTL::CreateSystemDefaultDevice());
-    m_queue = NS::TransferPtr(m_device->newMTL4CommandQueue());
+MetalContext::MetalContext(CA::MetalLayer* metalLayer) {
+    m_device = MTL::CreateSystemDefaultDevice();
+    m_queue = m_device->newMTL4CommandQueue();
 
     m_frameBoundarySemaphore = dispatch_semaphore_create(MAX_FRAMES_IN_FLIGHT);
-    m_frameEvent = NS::TransferPtr(m_device->newSharedEvent());
-    m_eventListener = NS::TransferPtr(MTL::SharedEventListener::alloc()->init());
+    m_frameEvent = m_device->newSharedEvent();
+    m_eventListener = MTL::SharedEventListener::alloc()->init();
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        m_commandAllocators[i] = NS::TransferPtr(m_device->newCommandAllocator());
+        m_commandAllocators[i] = m_device->newCommandAllocator();
     }
 
-    m_commandBuffer = NS::TransferPtr(m_device->newCommandBuffer());
-
-    m_swapchain = NS::RetainPtr(metalLayer);
-    m_swapchain->setDevice(m_device.get());
+    m_swapchain = metalLayer;
+    m_swapchain->setDevice(m_device);
     m_swapchain->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
     m_swapchain->setFramebufferOnly(true);
     m_swapchain->setMaximumDrawableCount(MAX_FRAMES_IN_FLIGHT);
@@ -33,23 +32,17 @@ void MetalContext::BeginFrame() {
 
     const uint32_t bufferIndex = static_cast<uint32_t>(m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT);
     m_commandAllocators[bufferIndex]->reset();
-
-    m_commandBuffer->beginCommandBuffer(m_commandAllocators[bufferIndex].get());
 }
 
 void MetalContext::EndFrame() {
-    m_commandBuffer->endCommandBuffer();
-    MTL4::CommandBuffer* bufferToSubmit[] = { m_commandBuffer.get() };
-    m_queue->commit(bufferToSubmit, 1);
-
     // Tell the GPU to return the token when it's done
     uint64_t signalValue = m_currentFrameIndex + 1;
     dispatch_semaphore_t blockSema = m_frameBoundarySemaphore;
-    m_frameEvent->notifyListener(m_eventListener.get(), signalValue, ^(MTL::SharedEvent* ev, uint64_t val) {
+    m_frameEvent->notifyListener(m_eventListener, signalValue, ^(MTL::SharedEvent* ev, uint64_t val) {
         dispatch_semaphore_signal(blockSema);
     });
 
-    m_queue->signalEvent(m_frameEvent.get(), signalValue);
+    m_queue->signalEvent(m_frameEvent, signalValue);
 
     m_queue->wait(m_currentDrawable);
     m_queue->signalDrawable(m_currentDrawable);

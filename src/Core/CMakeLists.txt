@@ -2,6 +2,11 @@ add_library(Core STATIC
         MetalInit.cpp
         MetalContext.mm
         Window.mm
+        CommandBufferPool.cpp
+        CommandBuffer.cpp
+        CommandBuffer.h
+        Buffer.cpp
+        Buffer.h
 )
 
 target_include_directories(Core PUBLIC
@@ -12,6 +17,9 @@ target_include_directories(Core PUBLIC
 target_link_libraries(Core PRIVATE
         Utility
         glfw
+)
+
+target_link_libraries(Core PUBLIC
         "-framework Metal"
         "-framework Foundation"
         "-framework QuartzCore"

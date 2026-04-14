@@ -2,6 +2,8 @@
 
 #include <QuartzCore/QuartzCore.hpp>
 
+inline constexpr uint MAX_FRAMES_IN_FLIGHT = 3;
+
 struct GLFWwindow;
 
 class Window {

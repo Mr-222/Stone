@@ -7,6 +7,7 @@
 #include <thread>
 #include <chrono>
 #include <vector>
+#include <utility>
 
 #include <Core/MetalContext.h>
 #include <Core/CommandBuffer.h>
@@ -16,7 +17,7 @@ public:
     CommandBufferPool(size_t cap, const MetalContext& context);
 
     CommandBuffer Acquire();
-    CommandBuffer AcquireFlushGPU();
+    std::pair<CommandBuffer, NS::SharedPtr<MTL::ResidencySet>> AcquireFlushGPU();
 
 private:
     friend class CommandBuffer;

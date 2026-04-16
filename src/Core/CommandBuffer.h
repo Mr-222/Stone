@@ -9,11 +9,13 @@ public:
     CommandBuffer() = delete;
     ~CommandBuffer();
 
+    CommandBuffer(CommandBuffer&& other) noexcept;
     CommandBuffer(const CommandBuffer&) = delete;
     CommandBuffer& operator=(const CommandBuffer&) = delete;
+    CommandBuffer& operator=(CommandBuffer&&) = delete;
 
     MTL4::RenderCommandEncoder*   BeginRenderPass(MTL4::RenderPassDescriptor* desc, MTL::ResidencySet* set = nullptr);
-    MTL4::ComputeCommandEncoder*  BeginBlitPass();
+    MTL4::ComputeCommandEncoder*  BeginBlitPass(MTL::ResidencySet* set = nullptr);
     void SubmitTo(MTL4::CommandQueue* submitQueue) const;
 
 private:

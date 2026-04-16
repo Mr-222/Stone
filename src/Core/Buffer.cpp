@@ -2,6 +2,19 @@
 
 #include "Utility/Logger.h"
 
+namespace {
+void AddBufferResidency(CommandBuffer& cmd, MTL::Buffer* buffer) {
+    if (!buffer)
+        return;
+
+    MTL::Heap* heap = buffer->heap();
+    if (heap)
+        cmd.AddResource(heap);
+    else
+        cmd.AddResource(buffer);
+}
+}
+
 Buffer::Buffer(MTL::Device* device, size_t size, MTL::ResourceOptions options) : m_size(size)
 {
     m_buffer = device->newBuffer(size, options);
@@ -24,21 +37,20 @@ Buffer::~Buffer() {
 }
 
 void Buffer::UploadFrom(const Buffer& src, CommandBuffer& cmd) const {
+    AddBufferResidency(cmd, src.GetNative());
+    AddBufferResidency(cmd, m_buffer);
+
     MTL4::ComputeCommandEncoder* encoder = cmd.BeginBlitPass();
     encoder->copyFromBuffer(src.GetNative(), 0, m_buffer, 0, m_size);
     encoder->endEncoding();
 }
 
 void Buffer::UploadFromFlush(const Buffer& src, CommandBufferPool& pool, MTL4::CommandQueue* queue) const {
-    auto [temp, set] = pool.AcquireFlushGPU();
-    set->addAllocation(src.GetNative());
-    MTL::Heap* heap = m_buffer->heap();
-    if (heap)
-        set->addAllocation(heap);
-    else
-        set->addAllocation(m_buffer);
-    set->commit();
-    MTL4::ComputeCommandEncoder* encoder = temp.BeginBlitPass(set.get());
+    CommandBuffer temp = pool.AcquireFlushGPU();
+    AddBufferResidency(temp, src.GetNative());
+    AddBufferResidency(temp, m_buffer);
+
+    MTL4::ComputeCommandEncoder* encoder = temp.BeginBlitPass();
     encoder->copyFromBuffer(src.GetNative(), 0, m_buffer, 0, m_size);
     encoder->endEncoding();
     temp.SubmitTo(queue);

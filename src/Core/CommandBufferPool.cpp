@@ -21,10 +21,10 @@ CommandBuffer CommandBufferPool::Acquire() {
     m_head = (m_head + 1) % m_capacity;
     m_count--;
 
-    return CommandBuffer(buffer, m_context.GetCurrentAllocator(), this, false);
+    return CommandBuffer(buffer, m_context.GetCurrentAllocator(), m_context.GetDevice(), this, false);
 }
 
-std::pair<CommandBuffer, NS::SharedPtr<MTL::ResidencySet>> CommandBufferPool::AcquireFlushGPU() {
+CommandBuffer CommandBufferPool::AcquireFlushGPU() {
     std::unique_lock lock(m_mtx);
 
     m_cv.wait(lock, [this] { return m_count > 0; });
@@ -34,11 +34,7 @@ std::pair<CommandBuffer, NS::SharedPtr<MTL::ResidencySet>> CommandBufferPool::Ac
     m_head = (m_head + 1) % m_capacity;
     m_count--;
 
-    MTL::ResidencySetDescriptor* rsDesc = MTL::ResidencySetDescriptor::alloc()->init();
-    MTL::ResidencySet* set = m_context.GetDevice()->newResidencySet(rsDesc, nullptr);
-    rsDesc->release();
-
-    return { CommandBuffer(buffer, m_context.GetCurrentAllocator(), this, true), NS::TransferPtr(set) };
+    return CommandBuffer(buffer, m_context.GetCurrentAllocator(), m_context.GetDevice(), this, true);
 }
 
 void CommandBufferPool::Release(MTL4::CommandBuffer* buffer) {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Metal/Metal.hpp>
-#include <dispatch/dispatch.h>
+#include <semaphore>
 #include <vector>
 
 #include "Core/Window.h"
@@ -25,8 +25,8 @@ private:
     MTL4::CommandQueue* m_queue;
 
     // Synchronization primitives
-    dispatch_semaphore_t m_frameBoundarySemaphore = nullptr;
-    uint64_t m_currentFrameIndex = 0;
+    std::counting_semaphore<MAX_FRAMES_IN_FLIGHT> m_frameBoundarySemaphore;
+    uint64_t m_currentFrameIndex;
     MTL::SharedEvent* m_frameEvent;
     MTL::SharedEventListener* m_eventListener;
 

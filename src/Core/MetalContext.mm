@@ -3,11 +3,10 @@
 #include "Utility/Logger.h"
 #include "Core/CommandBufferPool.h"
 
-MetalContext::MetalContext(CA::MetalLayer* metalLayer) {
+MetalContext::MetalContext(CA::MetalLayer* metalLayer): m_currentFrameIndex(0), m_frameBoundarySemaphore(MAX_FRAMES_IN_FLIGHT) {
     m_device = MTL::CreateSystemDefaultDevice();
     m_queue = m_device->newMTL4CommandQueue();
 
-    m_frameBoundarySemaphore = dispatch_semaphore_create(MAX_FRAMES_IN_FLIGHT);
     m_frameEvent = m_device->newSharedEvent();
     m_eventListener = MTL::SharedEventListener::alloc()->init();
 
@@ -25,7 +24,7 @@ MetalContext::MetalContext(CA::MetalLayer* metalLayer) {
 
 void MetalContext::BeginFrame() {
     // Take a token. Block the CPU if GPU is 3 frames behind.
-    dispatch_semaphore_wait(m_frameBoundarySemaphore, DISPATCH_TIME_FOREVER);
+    m_frameBoundarySemaphore.acquire();
 
     m_currentDrawable = m_swapchain->nextDrawable();
     LOG_ERROR_IF(!m_currentDrawable, "No more drawables available!");
@@ -37,9 +36,9 @@ void MetalContext::BeginFrame() {
 void MetalContext::EndFrame() {
     // Tell the GPU to return the token when it's done
     uint64_t signalValue = m_currentFrameIndex + 1;
-    dispatch_semaphore_t blockSema = m_frameBoundarySemaphore;
+    auto* sema = &m_frameBoundarySemaphore;
     m_frameEvent->notifyListener(m_eventListener, signalValue, ^(MTL::SharedEvent* ev, uint64_t val) {
-        dispatch_semaphore_signal(blockSema);
+        sema->release();
     });
 
     m_queue->signalEvent(m_frameEvent, signalValue);

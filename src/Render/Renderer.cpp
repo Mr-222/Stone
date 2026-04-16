@@ -14,7 +14,9 @@ constexpr const char* kTriangleShaderLibrary = STONE_SHADER_DIR "/Triangle.metal
 MTL::RenderPipelineState* m_pipelineState = nullptr;
 MTL4::ArgumentTable* m_argumentTable = nullptr;
 MTL::ResidencySet* m_residencySet = nullptr;
-MTL::Buffer* m_argumentBuffer = nullptr;
+Heap* m_heap = nullptr;
+Heap* m_SharedHeap = nullptr;
+Buffer* m_argumentBuffer = nullptr;
 Buffer* m_positionBuffer = nullptr;
 Buffer* m_colorBuffer = nullptr;
 
@@ -89,19 +91,28 @@ void Renderer::Setup() {
         { 0.f, 0.f, 1.f, 1.f },
     }};
 
+    m_heap = new Heap(m_metalContext->GetDevice(), 1024 * 1024, MTL::StorageModePrivate); // 1MB private heap for this example
+    m_SharedHeap = new Heap(m_metalContext->GetDevice(), 1024, MTL::StorageModeShared); // 1KB shared heap for this example
+
+    MTL::ResidencySetDescriptor* rsDesc = MTL::ResidencySetDescriptor::alloc()->init()->autorelease();
+    m_residencySet = device->newResidencySet(rsDesc, &error);
+    m_residencySet->addAllocation(m_heap->GetNative());
+    m_residencySet->addAllocation(m_SharedHeap->GetNative());
+    m_residencySet->commit();
+
     Buffer positionBufferCopy = Buffer(m_metalContext->GetDevice(), positions.data(), sizeof(positions), MTL::ResourceStorageModeShared);
     Buffer colorBufferCopy = Buffer(m_metalContext->GetDevice(), colors.data(), sizeof(colors), MTL::ResourceStorageModeShared);
-    m_positionBuffer = new Buffer(m_metalContext->GetDevice(), sizeof(positions), MTL::ResourceStorageModePrivate);
-    m_colorBuffer = new Buffer(m_metalContext->GetDevice(), sizeof(colors), MTL::ResourceStorageModePrivate);
+    m_positionBuffer = new Buffer(*m_heap, sizeof(positions), MTL::ResourceStorageModePrivate);
+    m_colorBuffer = new Buffer(*m_heap, sizeof(colors), MTL::ResourceStorageModePrivate);
     m_positionBuffer->UploadFromFlush(positionBufferCopy, *m_commandBufferPool, m_metalContext->GetCommandQueue());
     m_colorBuffer->UploadFromFlush(colorBufferCopy, *m_commandBufferPool, m_metalContext->GetCommandQueue());
-    LOG_ERROR_IF(!m_positionBuffer->GetNativeBuffer() || !m_colorBuffer->GetNativeBuffer(), "Failed to allocate triangle buffers");
+    LOG_ERROR_IF(!m_positionBuffer->GetNative() || !m_colorBuffer->GetNative(), "Failed to allocate triangle buffers");
 
-    m_argumentBuffer = device->newBuffer(argumentEncoder->encodedLength(), MTL::ResourceStorageModeShared);
+    m_argumentBuffer = new Buffer(*m_SharedHeap, argumentEncoder->encodedLength(), MTL::ResourceStorageModeShared);
 
-    argumentEncoder->setArgumentBuffer(m_argumentBuffer, 0);
-    argumentEncoder->setBuffer(m_positionBuffer->GetNativeBuffer(), 0, 0);
-    argumentEncoder->setBuffer(m_colorBuffer->GetNativeBuffer(), 0, 1);
+    argumentEncoder->setArgumentBuffer(m_argumentBuffer->GetNative(), 0);
+    argumentEncoder->setBuffer(m_positionBuffer->GetNative(), 0, 0);
+    argumentEncoder->setBuffer(m_colorBuffer->GetNative(), 0, 1);
 
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("Triangle Argument Table", NS::UTF8StringEncoding));
@@ -110,15 +121,7 @@ void Renderer::Setup() {
     m_argumentTable = device->newArgumentTable(argumentTableDescriptor, &error);
     LOG_ERROR_IF(!m_argumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    m_argumentTable->setAddress(m_argumentBuffer->gpuAddress(), 0);
-
-    // Create residency set
-    MTL::ResidencySetDescriptor* rsDesc = MTL::ResidencySetDescriptor::alloc()->init()->autorelease();
-    m_residencySet = device->newResidencySet(rsDesc, &error);
-    m_residencySet->addAllocation(m_argumentBuffer);
-    m_residencySet->addAllocation(m_positionBuffer->GetNativeBuffer());
-    m_residencySet->addAllocation(m_colorBuffer->GetNativeBuffer());
-    m_residencySet->commit();
+    m_argumentTable->setAddress(m_argumentBuffer->GetGPUAddress(), 0);
 
     argumentEncoder->release();
     vertexFunction->release();

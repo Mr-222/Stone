@@ -6,7 +6,7 @@ add_library(Core STATIC
         CommandBuffer.cpp
         CommandBuffer.h
         Buffer.cpp
-        Buffer.h
+        Heap.cpp
 )
 
 target_include_directories(Core PUBLIC

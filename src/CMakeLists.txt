@@ -28,6 +28,13 @@ FetchContent_Declare(
         FIND_PACKAGE_ARGS CONFIG
 )
 
+FetchContent_Declare(
+        fastgltf
+        GIT_REPOSITORY https://github.com/spnda/fastgltf.git
+        GIT_TAG v0.9.0
+        FIND_PACKAGE_ARGS CONFIG
+)
+
 FetchContent_MakeAvailable(fmt glfw spdlog glm)
 
 add_subdirectory(Utility)

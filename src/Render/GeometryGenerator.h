@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
+#include <utility>
 #include <vector>
 #include <glm/ext/matrix_transform.hpp>
 
@@ -7,10 +10,17 @@
 #include "Mesh.h"
 
 class GeometryGenerator {
-    static std::pair<std::vector<Vertex>, std::vector<uint32_t> >
-    Sphere(glm::vec3 pos, float radius, int tessellation) {
+    static Mesh MakeMesh(std::vector<Vertex> vertices, std::vector<uint16_t> indices) {
+        Mesh mesh;
+        mesh.transform = glm::identity<glm::mat4>();
+        *mesh.vertices = std::move(vertices);
+        *mesh.indices = std::move(indices);
+        return mesh;
+    }
+
+    static Mesh Sphere(glm::vec3 pos, float radius, int tessellation) {
         std::vector<Vertex> vertices;
-        std::vector<uint32_t> indices;
+        std::vector<uint16_t> indices;
 
         for (unsigned int lat = 1; lat < tessellation; ++lat) {
             float theta = lat * M_PI / tessellation;
@@ -21,7 +31,7 @@ class GeometryGenerator {
                 float y = radius * cos(theta);
                 float z = radius * sin(theta) * sin(phi);
                 vertices.emplace_back();
-                vertices.back().pos = glm::vec3{x, y, z} + pos;
+                vertices.back().position = glm::vec3{x, y, z} + pos;
                 vertices.back().normal = glm::normalize(glm::vec3{x, y, z});
 
                 float u = (float) lon / tessellation;
@@ -37,7 +47,7 @@ class GeometryGenerator {
         int top = vertices.size();
         for (int lon = 0; lon <= tessellation; ++lon) {
             vertices.emplace_back();
-            vertices.back().pos = pos + glm::vec3{0, radius, 0};
+            vertices.back().position = pos + glm::vec3{0, radius, 0};
             vertices.back().normal = {0, 1, 0};
 
             float u = (float) (lon + 0.5f) / tessellation;
@@ -50,7 +60,7 @@ class GeometryGenerator {
         }
         for (int lon = 0; lon <= tessellation; ++lon) {
             vertices.emplace_back();
-            vertices.back().pos = pos - glm::vec3{0, radius, 0};
+            vertices.back().position = pos - glm::vec3{0, radius, 0};
             vertices.back().normal = {0, -1, 0};
 
             float u = (float) (lon + 0.5f) / tessellation;
@@ -94,12 +104,12 @@ class GeometryGenerator {
             indices.push_back(second);
             indices.push_back(third);
         }
-        return {vertices, indices};
+        return MakeMesh(std::move(vertices), std::move(indices));
     }
 
-    static std::pair<std::vector<Vertex>, std::vector<uint32_t>> Cube(glm::vec3 pos, glm::vec3 scale) {
+    static Mesh Cube(glm::vec3 pos, glm::vec3 scale) {
         std::vector<Vertex> vertices;
-        std::vector<uint32_t> indices;
+        std::vector<uint16_t> indices;
 
         std::array<glm::vec3, 8> positions = { {
             { -0.5f, -0.5f, 0.5f },
@@ -178,12 +188,12 @@ class GeometryGenerator {
             vertex.normal = glm::normalize(vertex.normal);
         }
 
-        return { vertices, indices };
+        return MakeMesh(std::move(vertices), std::move(indices));
     }
 
-    static std::pair<std::vector<Vertex>, std::vector<uint32_t>> Plane(glm::vec3 pos, glm::vec3 normal, std::array<float, 2> size) {
+    static Mesh Plane(glm::vec3 pos, glm::vec3 normal, std::array<float, 2> size) {
         std::vector<Vertex> vertices;
-        std::vector<uint32_t> indices;
+        std::vector<uint16_t> indices;
 
         glm::vec3 up(0, 0, 1);
         float dot_normal_up = glm::dot(normal, up);
@@ -196,13 +206,13 @@ class GeometryGenerator {
 
         // in uv space (0, 0) is the top left corner of the picture
         vertices = {
-            { pos + -0.5f * size[0] * tangent + -0.5f * size[1] * bitangent, normal, { 0.0f, 0.0f } },
-            { pos + 0.5f * size[0] * tangent + -0.5f * size[1] * bitangent, normal, { 1.0f, 0.0f } },
-            { pos + 0.5f * size[0] * tangent + 0.5f * size[1] * bitangent, normal, { 1.0f, 1.0f } },
-            { pos + -0.5f * size[0] * tangent + 0.5f * size[1] * bitangent, normal, { 0.0f, 1.0f } },
+            { pos + -0.5f * size[0] * tangent + -0.5f * size[1] * bitangent, normal, { 0.0f, 0.0f }, tangent },
+            { pos + 0.5f * size[0] * tangent + -0.5f * size[1] * bitangent, normal, { 1.0f, 0.0f }, tangent },
+            { pos + 0.5f * size[0] * tangent + 0.5f * size[1] * bitangent, normal, { 1.0f, 1.0f }, tangent },
+            { pos + -0.5f * size[0] * tangent + 0.5f * size[1] * bitangent, normal, { 0.0f, 1.0f }, tangent },
         };
         indices = { 0, 2, 1, 0, 3, 2};
 
-        return { vertices, indices };
+        return MakeMesh(std::move(vertices), std::move(indices));
     }
 };

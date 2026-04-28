@@ -1,5 +1,6 @@
 add_library(Render STATIC
         Renderer.cpp
+        Mesh.cpp
 )
 
 target_include_directories(Render PUBLIC
@@ -9,5 +10,6 @@ target_include_directories(Render PUBLIC
 target_link_libraries(Render PRIVATE
         Core
         Utility
+        fastgltf::fastgltf
         glm::glm
 )

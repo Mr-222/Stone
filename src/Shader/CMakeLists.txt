@@ -1,11 +1,6 @@
 find_program(XCRUN_EXECUTABLE xcrun REQUIRED)
 
 function(stone_resolve_metal_tool out_var tool_name)
-    if(DEFINED ${out_var} AND EXISTS "${${out_var}}")
-        set(${out_var} "${${out_var}}" PARENT_SCOPE)
-        return()
-    endif()
-
     execute_process(
             COMMAND "${XCRUN_EXECUTABLE}" --toolchain Metal --find "${tool_name}"
             RESULT_VARIABLE _STONE_TOOL_RESULT
@@ -17,6 +12,8 @@ function(stone_resolve_metal_tool out_var tool_name)
     if(_STONE_TOOL_RESULT EQUAL 0 AND EXISTS "${_STONE_TOOL_PATH}")
         set(${out_var} "${_STONE_TOOL_PATH}" CACHE FILEPATH "Path to the Apple ${tool_name} tool" FORCE)
         set(${out_var} "${_STONE_TOOL_PATH}" PARENT_SCOPE)
+    elseif(DEFINED ${out_var} AND EXISTS "${${out_var}}")
+        set(${out_var} "${${out_var}}" PARENT_SCOPE)
     else()
         unset(${out_var} CACHE)
         set(${out_var} "" PARENT_SCOPE)

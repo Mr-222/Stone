@@ -29,13 +29,20 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
+        simdjson
+        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+        GIT_TAG v3.13.0
+        FIND_PACKAGE_ARGS CONFIG
+)
+
+FetchContent_Declare(
         fastgltf
         GIT_REPOSITORY https://github.com/spnda/fastgltf.git
         GIT_TAG v0.9.0
         FIND_PACKAGE_ARGS CONFIG
 )
 
-FetchContent_MakeAvailable(fmt glfw spdlog glm)
+FetchContent_MakeAvailable(fmt glfw spdlog glm simdjson fastgltf)
 
 add_subdirectory(Utility)
 add_subdirectory(Core)

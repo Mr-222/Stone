@@ -1,6 +1,6 @@
 add_library(Render STATIC
         Renderer.cpp
-        Mesh.cpp
+        Scene.cpp
 )
 
 target_include_directories(Render PUBLIC

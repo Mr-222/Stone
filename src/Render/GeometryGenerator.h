@@ -6,21 +6,13 @@
 #include <vector>
 #include <glm/ext/matrix_transform.hpp>
 
-#include <Utility/Logger.h>
 #include "Mesh.h"
 
 class GeometryGenerator {
-    static Mesh MakeMesh(std::vector<Vertex> vertices, std::vector<uint16_t> indices) {
-        Mesh mesh;
-        mesh.transform = glm::identity<glm::mat4>();
-        *mesh.vertices = std::move(vertices);
-        *mesh.indices = std::move(indices);
-        return mesh;
-    }
-
+public:
     static Mesh Sphere(glm::vec3 pos, float radius, int tessellation) {
         std::vector<Vertex> vertices;
-        std::vector<uint16_t> indices;
+        std::vector<uint32_t> indices;
 
         for (unsigned int lat = 1; lat < tessellation; ++lat) {
             float theta = lat * M_PI / tessellation;
@@ -109,7 +101,7 @@ class GeometryGenerator {
 
     static Mesh Cube(glm::vec3 pos, glm::vec3 scale) {
         std::vector<Vertex> vertices;
-        std::vector<uint16_t> indices;
+        std::vector<uint32_t> indices;
 
         std::array<glm::vec3, 8> positions = { {
             { -0.5f, -0.5f, 0.5f },
@@ -193,7 +185,7 @@ class GeometryGenerator {
 
     static Mesh Plane(glm::vec3 pos, glm::vec3 normal, std::array<float, 2> size) {
         std::vector<Vertex> vertices;
-        std::vector<uint16_t> indices;
+        std::vector<uint32_t> indices;
 
         glm::vec3 up(0, 0, 1);
         float dot_normal_up = glm::dot(normal, up);
@@ -214,5 +206,18 @@ class GeometryGenerator {
         indices = { 0, 2, 1, 0, 3, 2};
 
         return MakeMesh(std::move(vertices), std::move(indices));
+    }
+
+private:
+    static Mesh MakeMesh(std::vector<Vertex> vertices, std::vector<uint32_t> indices) {
+        Mesh mesh;
+        *mesh.vertices = std::move(vertices);
+        *mesh.indices = std::move(indices);
+        mesh.submeshes.push_back(SubMesh{
+            0,
+            static_cast<uint32_t>(mesh.indices->size()),
+            0,
+        });
+        return mesh;
     }
 };

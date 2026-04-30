@@ -18,17 +18,20 @@ struct SubMesh
 {
     uint32_t firstIndex;
     uint32_t indexCount;
-    uint32_t materialIndex;
+    uint32_t vertexOffset;
 };
 
 struct Mesh
 {
-    glm::mat4 transform;
     std::unique_ptr<std::vector<Vertex>> vertices;
-    std::unique_ptr<std::vector<uint16_t>> indices;
+    std::unique_ptr<std::vector<uint32_t>> indices;
     std::vector<SubMesh> submeshes;
 
-    Mesh();
+    Mesh()
+        : vertices(std::make_unique<std::vector<Vertex>>())
+        , indices(std::make_unique<std::vector<uint32_t>>())
+    {
+    }
 
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;
@@ -37,4 +40,9 @@ struct Mesh
     Mesh& operator=(Mesh&&) noexcept = default;
 };
 
-std::vector<Mesh> LoadGltf(std::filesystem::path path);
+struct SceneObject
+{
+    uint32_t firstSubmesh;
+    uint32_t submeshCount;
+    glm::mat4 transform;
+};

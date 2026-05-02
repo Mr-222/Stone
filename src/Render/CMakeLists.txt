@@ -1,6 +1,7 @@
 add_library(Render STATIC
         Renderer.cpp
         Scene.cpp
+        Camera.cpp
 )
 
 target_include_directories(Render PUBLIC

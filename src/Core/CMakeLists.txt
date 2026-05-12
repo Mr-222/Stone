@@ -7,6 +7,10 @@ add_library(Core STATIC
         CommandBuffer.h
         Buffer.cpp
         Heap.cpp
+        RenderGraphBuilder.h
+        RenderGraphResources.h
+        RenderGraph.cpp
+        RenderPassNode.h
 )
 
 target_include_directories(Core PUBLIC

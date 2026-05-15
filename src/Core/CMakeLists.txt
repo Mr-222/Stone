@@ -6,9 +6,12 @@ add_library(Core STATIC
         CommandBuffer.cpp
         CommandBuffer.h
         Buffer.cpp
+        Texture.cpp
+        Texture.h
         Heap.cpp
         RenderGraphBuilder.h
         RenderGraphResources.h
+        RenderGraphResources.cpp
         RenderGraph.cpp
         RenderPassNode.h
 )

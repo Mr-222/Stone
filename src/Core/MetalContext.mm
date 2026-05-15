@@ -1,7 +1,7 @@
 #include "MetalContext.h"
 
 #include "Utility/Logger.h"
-#include "Core/CommandBufferPool.h"
+#include "CommandBufferPool.h"
 
 MetalContext::MetalContext(CA::MetalLayer* metalLayer): m_currentFrameIndex(0), m_frameBoundarySemaphore(MAX_FRAMES_IN_FLIGHT) {
     m_device = MTL::CreateSystemDefaultDevice();

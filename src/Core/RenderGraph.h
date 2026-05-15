@@ -1,18 +1,26 @@
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <Metal/Metal.hpp>
 
 #include "CommandBuffer.h"
+#include "CommandBufferPool.h"
+#include "MetalContext.h"
 #include "RenderGraphBuilder.h"
 #include "RenderGraphResources.h"
 #include "RenderPassNode.h"
 
 class RenderGraph {
 public:
-    RenderGraph(CommandBuffer&& cmd);
+    RenderGraph(std::shared_ptr<MetalContext> metalContext, std::shared_ptr<CommandBufferPool> commandBufferPool);
+
+    RenderGraphTextureHandle ImportTexture(const std::string& name, MTL::Texture* texture);
+    RenderGraphTextureHandle ImportTexture(const std::string& name, const Texture& texture);
 
     template<typename PassData>
     void AddPass(
@@ -26,11 +34,11 @@ public:
     void Execute(MTL4::CommandQueue*);
 
 private:
-    CommandBuffer m_cmd;
     // TODO: add dependency map
     std::vector<std::unique_ptr<RenderPassNodeBase>> m_passes;
-    RenderGraphBuilder m_builder;
     RenderGraphResources m_resources;
+    std::shared_ptr<MetalContext> m_metalContext;
+    std::shared_ptr<CommandBufferPool> m_commandBufferPool;
 };
 
 template<typename PassData>
@@ -42,8 +50,14 @@ void RenderGraph::AddPass(
     // TODO: Add name as key to dependency map
 
     PassData data;
-    setupFn(m_builder, data);
+    RenderGraphBuilder builder;
+    setupFn(builder, data);
 
-    auto node = std::make_unique<RenderPassNode<PassData>>(data, std::move(executeFn));
+    auto node = std::make_unique<RenderPassNode<PassData>>(
+        name,
+        builder.GetTextureAccesses(),
+        std::move(m_commandBufferPool->Acquire()),
+        data,
+        std::move(executeFn));
     m_passes.emplace_back(std::move(node));
 }

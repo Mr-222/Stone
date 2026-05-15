@@ -70,7 +70,7 @@ MTL4::ComputeCommandEncoder* CommandBuffer::BeginBlitPass(MTL::ResidencySet* set
     return m_commandBuffer->computeCommandEncoder();
 }
 
-void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) const {
+void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
     if (m_residencySet->allocationCount() > 0) {
         m_residencySet->commit();
         m_commandBuffer->useResidencySet(m_residencySet.get());
@@ -99,4 +99,6 @@ void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) const {
         // Standard non-blocking commit
         submitQueue->commit(bufferToSubmit, 1);
     }
+
+    m_hasBegun = false;
 }

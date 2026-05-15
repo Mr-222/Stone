@@ -8,8 +8,8 @@
 #include <chrono>
 #include <vector>
 
-#include <Core/MetalContext.h>
-#include <Core/CommandBuffer.h>
+#include "MetalContext.h"
+#include "CommandBuffer.h"
 
 class CommandBufferPool {
 public:

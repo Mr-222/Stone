@@ -7,7 +7,7 @@
 #include "Core/Texture.h"
 #include "Core/Window.h"
 #include "Core/RenderGraph.h"
-#include "Render/TrianglePass.h"
+#include "TrianglePass.h"
 
 Renderer::~Renderer() = default;
 

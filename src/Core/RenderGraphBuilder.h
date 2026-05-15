@@ -3,7 +3,7 @@
 #include <vector>
 #include <Metal/Metal.hpp>
 
-#include "Core/RenderGraphResources.h"
+#include "RenderGraphResources.h"
 
 enum class RenderGraphTextureAccessType {
     Read,

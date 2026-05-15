@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <Metal/Metal.hpp>
 
-#include "Core/Texture.h"
+#include "Texture.h"
 
 constexpr std::string kSwapchainImageName = "swapchain_image";
 

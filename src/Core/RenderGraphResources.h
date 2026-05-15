@@ -25,13 +25,14 @@ class RenderGraphResources {
 public:
     void Clear();
 
-    RenderGraphTextureHandle ImportTexture(std::string name, MTL::Texture* texture);
-    RenderGraphTextureHandle ImportTexture(std::string name, const Texture& texture);
+    RenderGraphTextureHandle DeclareTexture(std::string name);
+    RenderGraphTextureHandle RegisterTexture(std::string name, const Texture& texture);
 
     MTL::Texture* GetTexture(RenderGraphTextureHandle handle) const;
     RenderGraphTextureHandle GetTextureHandle(std::string_view name) const;
 
     bool IsTextureHandleValid(RenderGraphTextureHandle handle) const;
+    bool IsTextureHandleDeclared(RenderGraphTextureHandle handle) const;
     const std::string& GetTextureName(RenderGraphTextureHandle handle) const;
 
 private:

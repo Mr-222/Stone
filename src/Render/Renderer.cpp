@@ -34,7 +34,7 @@ void Renderer::Run() {
 
         m_metalContext->BeginFrame();
         Texture backbuffer = Texture::Borrowed(m_metalContext->GetCurrentDrawable()->texture());
-        m_renderGraph->ImportTexture(kSwapchainImageName, backbuffer);
+        m_renderGraph->RegisterTexture(kSwapchainImageName, backbuffer);
         DoRender();
         m_metalContext->EndFrame();
     }

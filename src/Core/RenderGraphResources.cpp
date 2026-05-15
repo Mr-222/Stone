@@ -4,31 +4,31 @@
 
 void RenderGraphResources::Clear() {
     m_textures.clear();
+    m_textureLUT.clear();
 }
 
-RenderGraphTextureHandle RenderGraphResources::ImportTexture(std::string name, MTL::Texture* texture) {
-    LOG_ERROR_IF(!texture, "Cannot import null texture '{}' into render graph.", name);
+RenderGraphTextureHandle RenderGraphResources::DeclareTexture(std::string name) {
+    if (m_textureLUT.contains(name))
+        return m_textureLUT[name];
 
-    RenderGraphTextureHandle handle;
+    m_textures.push_back(TextureResource{
+       .name = name,
+       .texture = nullptr,
+    });
 
-    if (m_textureLUT.contains(name)) {
-        handle = m_textureLUT[name];
-        m_textures[handle.index].texture = texture;
-    }
-    else {
-        m_textures.push_back(TextureResource{
-           .name = name,
-           .texture = texture,
-        });
-        handle = RenderGraphTextureHandle { static_cast<uint32_t>(m_textures.size() - 1) };
-        m_textureLUT[name] = handle;
-    }
-
+    RenderGraphTextureHandle handle { static_cast<uint32_t>(m_textures.size() - 1) };
+    m_textureLUT[name] = handle;
     return handle;
 }
 
-RenderGraphTextureHandle RenderGraphResources::ImportTexture(std::string name, const Texture& texture) {
-    return ImportTexture(std::move(name), texture.GetNative());
+RenderGraphTextureHandle RenderGraphResources::RegisterTexture(std::string name, const Texture& texture) {
+    MTL::Texture* nativeTexture = texture.GetNative();
+    LOG_ERROR_IF(!nativeTexture, "Cannot register null texture '{}' into render graph.", name);
+
+    RenderGraphTextureHandle handle = DeclareTexture(name);
+    m_textures[handle.index].texture = nativeTexture;
+
+    return handle;
 }
 
 MTL::Texture* RenderGraphResources::GetTexture(RenderGraphTextureHandle handle) const {
@@ -45,7 +45,11 @@ bool RenderGraphResources::IsTextureHandleValid(RenderGraphTextureHandle handle)
     return handle.IsValid() && handle.index < m_textures.size() && m_textures[handle.index].texture;
 }
 
+bool RenderGraphResources::IsTextureHandleDeclared(RenderGraphTextureHandle handle) const {
+    return handle.IsValid() && handle.index < m_textures.size();
+}
+
 const std::string& RenderGraphResources::GetTextureName(RenderGraphTextureHandle handle) const {
-    LOG_ERROR_IF(!IsTextureHandleValid(handle), "Invalid render graph texture handle {}.", handle.index);
+    LOG_ERROR_IF(!IsTextureHandleDeclared(handle), "Invalid render graph texture handle {}.", handle.index);
     return m_textures[handle.index].name;
 }

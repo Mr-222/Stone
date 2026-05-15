@@ -12,13 +12,13 @@ enum class RenderGraphTextureAccessType {
 
 struct RenderGraphTextureAccess {
     RenderGraphTextureHandle texture;
-    RenderGraphTextureAccessType type = RenderGraphTextureAccessType::Read;
+    RenderGraphTextureAccessType type;
 };
 
 struct RenderGraphColorAttachmentDesc {
-    MTL::LoadAction loadAction = MTL::LoadActionLoad;
-    MTL::StoreAction storeAction = MTL::StoreActionStore;
-    MTL::ClearColor clearColor = MTL::ClearColor::Make(0.0, 0.0, 0.0, 1.0);
+    MTL::LoadAction loadAction;
+    MTL::StoreAction storeAction;
+    MTL::ClearColor clearColor;
 };
 
 struct RenderGraphColorAttachment {

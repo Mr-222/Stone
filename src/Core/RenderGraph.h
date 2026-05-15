@@ -19,8 +19,8 @@ class RenderGraph {
 public:
     RenderGraph(std::shared_ptr<MetalContext> metalContext, std::shared_ptr<CommandBufferPool> commandBufferPool);
 
-    RenderGraphTextureHandle ImportTexture(const std::string& name, MTL::Texture* texture);
-    RenderGraphTextureHandle ImportTexture(const std::string& name, const Texture& texture);
+    RenderGraphTextureHandle DeclareTexture(const std::string& name);
+    RenderGraphTextureHandle RegisterTexture(const std::string& name, const Texture& texture);
 
     template<typename PassData>
     void AddPass(

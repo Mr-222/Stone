@@ -13,6 +13,7 @@ constexpr const char* kTriangleShaderLibrary = STONE_SHADER_DIR "/Triangle.metal
 
 namespace {
 struct TrianglePassData {
+    RenderGraphColorAttachment colorAttachment;
     MTL::RenderPipelineState* pipelineState = nullptr;
     MTL4::ArgumentTable* argumentTable = nullptr;
     MTL::ResidencySet* residencySet = nullptr;
@@ -117,16 +118,22 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
 }
 
 void TrianglePass::AddToGraph(RenderGraph& graph) {
+    RenderGraphTextureHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
+
     graph.AddPass<TrianglePassData>(
         "Triangle",
-        [this](RenderGraphBuilder& builder, TrianglePassData& data) {
+        [this, swapchainHandle](RenderGraphBuilder& builder, TrianglePassData& data) {
+            data.colorAttachment = builder.WriteColor(swapchainHandle, RenderGraphColorAttachmentDesc{
+                .loadAction = MTL::LoadActionClear,
+                .storeAction = MTL::StoreActionStore,
+                .clearColor = MTL::ClearColor::Make(0.1, 0.2, 0.3, 1.0),
+            });
             data.pipelineState = m_pipelineState;
             data.argumentTable = m_argumentTable;
             data.residencySet = m_residencySet;
         },
         [](const TrianglePassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
-            RenderGraphTextureHandle swapchainHandle = resources.GetTextureHandle(kSwapchainImageName);
-            MTL::Texture* colorTexture = resources.GetTexture(swapchainHandle);
+            MTL::Texture* colorTexture = resources.GetTexture(data.colorAttachment.texture);
             LOG_ERROR_IF(!colorTexture, "Triangle pass has no color target.");
             LOG_ERROR_IF(!data.pipelineState, "Triangle pass pipeline state is null.");
             LOG_ERROR_IF(!data.argumentTable, "Triangle pass argument table is null.");
@@ -134,9 +141,9 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
             MTL4::RenderPassDescriptor* passDescriptor = MTL4::RenderPassDescriptor::alloc()->init()->autorelease();
             MTL::RenderPassColorAttachmentDescriptor* colorAttachment = passDescriptor->colorAttachments()->object(0);
             colorAttachment->setTexture(colorTexture);
-            colorAttachment->setLoadAction(MTL::LoadActionClear);
-            colorAttachment->setClearColor(MTL::ClearColor::Make(0.1, 0.2, 0.3, 1.0));
-            colorAttachment->setStoreAction(MTL::StoreActionStore);
+            colorAttachment->setLoadAction(data.colorAttachment.desc.loadAction);
+            colorAttachment->setClearColor(data.colorAttachment.desc.clearColor);
+            colorAttachment->setStoreAction(data.colorAttachment.desc.storeAction);
 
             MTL4::RenderCommandEncoder* commandEncoder = cmd.BeginRenderPass(passDescriptor, data.residencySet);
             LOG_ERROR_IF(!commandEncoder, "Failed to create render command encoder");

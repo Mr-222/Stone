@@ -118,7 +118,7 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
 }
 
 void TrianglePass::AddToGraph(RenderGraph& graph) {
-    RenderGraphTextureHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
+    RenderGraphResourceHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
 
     graph.AddPass<TrianglePassData>(
         "Triangle",

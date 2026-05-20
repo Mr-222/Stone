@@ -11,9 +11,9 @@
 
 class RenderPassNodeBase {
 public:
-    RenderPassNodeBase(std::string name, std::vector<RenderGraphTextureAccess> textureAccesses, CommandBuffer&& cmd)
+    RenderPassNodeBase(std::string name, std::vector<RenderGraphResourceAccess> resourceAccesses, CommandBuffer&& cmd)
         : m_name(std::move(name))
-        , m_textureAccesses(std::move(textureAccesses))
+        , m_resourceAccesses(std::move(resourceAccesses))
         , m_cmd(std::move(cmd))
     {
     }
@@ -24,13 +24,13 @@ public:
     virtual void Execute(MTL4::CommandQueue*, RenderGraphResources& resources) = 0;
 
     const std::string& GetName() const { return m_name; }
-    const std::vector<RenderGraphTextureAccess>& GetTextureAccesses() const { return m_textureAccesses; }
+    const std::vector<RenderGraphResourceAccess>& GetResourceAccesses() const { return m_resourceAccesses; }
 
     CommandBuffer m_cmd;
 
 private:
     std::string m_name;
-    std::vector<RenderGraphTextureAccess> m_textureAccesses;
+    std::vector<RenderGraphResourceAccess> m_resourceAccesses;
 };
 
 template<typename PassData>
@@ -40,11 +40,11 @@ public:
 
     RenderPassNode(
         std::string name,
-        std::vector<RenderGraphTextureAccess> textureAccesses,
+        std::vector<RenderGraphResourceAccess> resourceAccesses,
         CommandBuffer&& cmd,
         const PassData& data,
         ExecuteCallback executeFn)
-        : RenderPassNodeBase(std::move(name), std::move(textureAccesses), std::move(cmd))
+        : RenderPassNodeBase(std::move(name), std::move(resourceAccesses), std::move(cmd))
         , m_data(data)
         , m_executeFn(std::move(executeFn))
     {

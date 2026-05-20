@@ -3,17 +3,21 @@
 #include <cstdint>
 #include <limits>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 #include <unordered_map>
 #include <Metal/Metal.hpp>
 
-#include "Core/Texture.h"
+#include "Texture.h"
 
 constexpr std::string kSwapchainImageName = "swapchain_image";
 
-struct RenderGraphTextureHandle {
+enum class RenderGraphResourceType {
+    Texture,
+    Buffer,
+};
+
+struct RenderGraphResourceHandle {
     static constexpr uint32_t InvalidIndex = std::numeric_limits<uint32_t>::max();
 
     uint32_t index = InvalidIndex;
@@ -21,26 +25,28 @@ struct RenderGraphTextureHandle {
     bool IsValid() const { return index != InvalidIndex; }
 };
 
+struct RenderGraphResource {
+    std::string name;
+    RenderGraphResourceType type;
+    MTL::Texture* texture = nullptr;
+    MTL::Buffer* buffer = nullptr;
+};
+
 class RenderGraphResources {
 public:
     void Clear();
 
-    RenderGraphTextureHandle DeclareTexture(std::string name);
-    RenderGraphTextureHandle RegisterTexture(std::string name, const Texture& texture);
+    RenderGraphResourceHandle DeclareTexture(std::string name);
+    RenderGraphResourceHandle RegisterTexture(std::string name, const Texture& texture);
 
-    MTL::Texture* GetTexture(RenderGraphTextureHandle handle) const;
-    RenderGraphTextureHandle GetTextureHandle(std::string_view name) const;
+    MTL::Texture* GetTexture(RenderGraphResourceHandle handle) const;
+    RenderGraphResourceHandle GetTextureHandle(const std::string& name) const;
 
-    bool IsTextureHandleValid(RenderGraphTextureHandle handle) const;
-    bool IsTextureHandleDeclared(RenderGraphTextureHandle handle) const;
-    const std::string& GetTextureName(RenderGraphTextureHandle handle) const;
+    bool IsTextureHandleValid(RenderGraphResourceHandle handle) const;
+    bool IsTextureHandleDeclared(RenderGraphResourceHandle handle) const;
+    const std::string& GetTextureName(RenderGraphResourceHandle handle) const;
 
 private:
-    struct TextureResource {
-        std::string name;
-        MTL::Texture* texture = nullptr;
-    };
-
-    std::vector<TextureResource> m_textures;
-    std::unordered_map<std::string, RenderGraphTextureHandle> m_textureLUT;
+    std::vector<RenderGraphResource> m_resources;
+    std::unordered_map<std::string, RenderGraphResourceHandle> m_resourcesLUT;
 };

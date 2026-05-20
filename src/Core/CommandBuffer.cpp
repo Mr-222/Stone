@@ -3,7 +3,7 @@
 #include <semaphore>
 #include <utility>
 
-#include "Core/CommandBufferPool.h"
+#include "CommandBufferPool.h"
 #include "Utility/Logger.h"
 
 CommandBuffer::CommandBuffer(MTL4::CommandBuffer* cmd,

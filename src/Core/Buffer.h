@@ -2,8 +2,8 @@
 
 #include <Metal/Metal.hpp>
 
-#include "Core/CommandBufferPool.h"
-#include "Core/Heap.h"
+#include "CommandBufferPool.h"
+#include "Heap.h"
 
 class Buffer {
 public:

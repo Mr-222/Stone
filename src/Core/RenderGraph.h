@@ -19,8 +19,8 @@ class RenderGraph {
 public:
     RenderGraph(std::shared_ptr<MetalContext> metalContext, std::shared_ptr<CommandBufferPool> commandBufferPool);
 
-    RenderGraphTextureHandle DeclareTexture(const std::string& name);
-    RenderGraphTextureHandle RegisterTexture(const std::string& name, const Texture& texture);
+    RenderGraphResourceHandle DeclareTexture(const std::string& name);
+    RenderGraphResourceHandle RegisterTexture(const std::string& name, const Texture& texture);
 
     template<typename PassData>
     void AddPass(
@@ -55,8 +55,7 @@ void RenderGraph::AddPass(
 
     auto node = std::make_unique<RenderPassNode<PassData>>(
         name,
-        builder.GetTextureAccesses(),
-        std::move(m_commandBufferPool->Acquire()),
+        builder.GetResourceAccesses(),
         data,
         std::move(executeFn));
     m_passes.emplace_back(std::move(node));

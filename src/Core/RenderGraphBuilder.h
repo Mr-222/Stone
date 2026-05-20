@@ -3,16 +3,17 @@
 #include <vector>
 #include <Metal/Metal.hpp>
 
-#include "Core/RenderGraphResources.h"
+#include "RenderGraphResources.h"
 
-enum class RenderGraphTextureAccessType {
+enum class RenderGraphResourceAccessType {
     Read,
     Write,
 };
 
-struct RenderGraphTextureAccess {
-    RenderGraphTextureHandle texture;
-    RenderGraphTextureAccessType type;
+struct RenderGraphResourceAccess {
+    RenderGraphResourceHandle resource;
+    RenderGraphResourceType resourceType;
+    RenderGraphResourceAccessType accessType;
 };
 
 struct RenderGraphColorAttachmentDesc {
@@ -22,23 +23,25 @@ struct RenderGraphColorAttachmentDesc {
 };
 
 struct RenderGraphColorAttachment {
-    RenderGraphTextureHandle texture;
+    RenderGraphResourceHandle texture;
     RenderGraphColorAttachmentDesc desc;
 };
 
 class RenderGraphBuilder {
 public:
-    void ReadTexture(RenderGraphTextureHandle texture) {
-        m_textureAccesses.push_back(RenderGraphTextureAccess{
-            .texture = texture,
-            .type = RenderGraphTextureAccessType::Read,
+    void ReadTexture(RenderGraphResourceHandle texture) {
+        m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = texture,
+            .resourceType = RenderGraphResourceType::Texture,
+            .accessType = RenderGraphResourceAccessType::Read,
         });
     }
 
-    RenderGraphColorAttachment WriteColor(RenderGraphTextureHandle texture, const RenderGraphColorAttachmentDesc& desc) {
-        m_textureAccesses.push_back(RenderGraphTextureAccess{
-            .texture = texture,
-            .type = RenderGraphTextureAccessType::Write,
+    RenderGraphColorAttachment WriteColor(RenderGraphResourceHandle texture, const RenderGraphColorAttachmentDesc& desc) {
+        m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = texture,
+            .resourceType = RenderGraphResourceType::Texture,
+            .accessType = RenderGraphResourceAccessType::Write,
         });
 
         return RenderGraphColorAttachment{
@@ -47,10 +50,10 @@ public:
         };
     }
 
-    const std::vector<RenderGraphTextureAccess>& GetTextureAccesses() const {
-        return m_textureAccesses;
+    const std::vector<RenderGraphResourceAccess>& GetResourceAccesses() const {
+        return m_resourceAccesses;
     }
 
 private:
-    std::vector<RenderGraphTextureAccess> m_textureAccesses;
+    std::vector<RenderGraphResourceAccess> m_resourceAccesses;
 };

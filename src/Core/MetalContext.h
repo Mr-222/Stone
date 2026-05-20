@@ -4,7 +4,7 @@
 #include <semaphore>
 #include <vector>
 
-#include "Core/Window.h"
+#include "Window.h"
 
 class MetalContext {
 public:

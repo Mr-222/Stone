@@ -37,6 +37,7 @@ void RenderGraph::Execute(MTL4::CommandQueue* queue) {
 
     for (auto& pass : m_passes) {
         auto commandBuffer = m_commandBufferPool->Acquire();
-        pass->Execute(queue, m_resources, commandBuffer);
+        pass->Execute(m_resources, commandBuffer);
+        commandBuffer.SubmitTo(queue);
     }
 }

@@ -20,7 +20,7 @@ public:
     virtual ~RenderPassNodeBase() = default;
 
     // Graph calls this during rg.Execute()
-    virtual void Execute(MTL4::CommandQueue*, RenderGraphResources&, CommandBuffer&) = 0;
+    virtual void Execute(RenderGraphResources&, CommandBuffer&) = 0;
 
     const std::string& GetName() const { return m_name; }
     const std::vector<RenderGraphResourceAccess>& GetResourceAccesses() const { return m_resourceAccesses; }
@@ -46,9 +46,8 @@ public:
     {
     }
 
-    void Execute(MTL4::CommandQueue* queue, RenderGraphResources& resources, CommandBuffer& cmd) override {
+    void Execute(RenderGraphResources& resources, CommandBuffer& cmd) override {
         m_executeFn(m_data, resources, cmd);
-        cmd.SubmitTo(queue);
     }
 
 private:

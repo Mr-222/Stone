@@ -56,7 +56,6 @@ void RenderGraph::AddPass(
     auto node = std::make_unique<RenderPassNode<PassData>>(
         name,
         builder.GetResourceAccesses(),
-        std::move(m_commandBufferPool->Acquire()),
         data,
         std::move(executeFn));
     m_passes.emplace_back(std::move(node));

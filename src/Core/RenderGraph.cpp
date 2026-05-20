@@ -35,6 +35,8 @@ void RenderGraph::Compile() {
 void RenderGraph::Execute(MTL4::CommandQueue* queue) {
     LOG_ERROR_IF(!queue, "RenderGraph execute requires a valid command queue.");
 
-    for (auto& pass : m_passes)
-        pass->Execute(queue, m_resources);
+    for (auto& pass : m_passes) {
+        auto commandBuffer = m_commandBufferPool->Acquire();
+        pass->Execute(queue, m_resources, commandBuffer);
+    }
 }

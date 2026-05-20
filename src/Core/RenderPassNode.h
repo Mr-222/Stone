@@ -11,22 +11,19 @@
 
 class RenderPassNodeBase {
 public:
-    RenderPassNodeBase(std::string name, std::vector<RenderGraphResourceAccess> resourceAccesses, CommandBuffer&& cmd)
+    RenderPassNodeBase(std::string name, std::vector<RenderGraphResourceAccess> resourceAccesses)
         : m_name(std::move(name))
         , m_resourceAccesses(std::move(resourceAccesses))
-        , m_cmd(std::move(cmd))
     {
     }
 
     virtual ~RenderPassNodeBase() = default;
 
     // Graph calls this during rg.Execute()
-    virtual void Execute(MTL4::CommandQueue*, RenderGraphResources& resources) = 0;
+    virtual void Execute(MTL4::CommandQueue*, RenderGraphResources&, CommandBuffer&) = 0;
 
     const std::string& GetName() const { return m_name; }
     const std::vector<RenderGraphResourceAccess>& GetResourceAccesses() const { return m_resourceAccesses; }
-
-    CommandBuffer m_cmd;
 
 private:
     std::string m_name;
@@ -41,18 +38,17 @@ public:
     RenderPassNode(
         std::string name,
         std::vector<RenderGraphResourceAccess> resourceAccesses,
-        CommandBuffer&& cmd,
         const PassData& data,
         ExecuteCallback executeFn)
-        : RenderPassNodeBase(std::move(name), std::move(resourceAccesses), std::move(cmd))
+        : RenderPassNodeBase(std::move(name), std::move(resourceAccesses))
         , m_data(data)
         , m_executeFn(std::move(executeFn))
     {
     }
 
-    void Execute(MTL4::CommandQueue* queue, RenderGraphResources& resources) override {
-        m_executeFn(m_data, resources, m_cmd);
-        m_cmd.SubmitTo(queue);
+    void Execute(MTL4::CommandQueue* queue, RenderGraphResources& resources, CommandBuffer& cmd) override {
+        m_executeFn(m_data, resources, cmd);
+        cmd.SubmitTo(queue);
     }
 
 private:

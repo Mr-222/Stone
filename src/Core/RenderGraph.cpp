@@ -33,7 +33,10 @@ void RenderGraph::Compile() {
                     pass->GetName());
                 break;
             case RenderGraphResourceType::Buffer:
-                // TODO
+                LOG_ERROR_IF(
+                    !m_resources.IsBufferHandleDeclared(access.resource),
+                    "Render pass '{} declared an invalid buffer dependency.'",
+                    pass->GetName());
                 break;
             }
         }

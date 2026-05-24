@@ -22,7 +22,6 @@ public:
 private:
     MTL::RenderPipelineState* m_pipelineState = nullptr;
     MTL4::ArgumentTable* m_argumentTable = nullptr;
-    MTL::ResidencySet* m_residencySet = nullptr;
 
     std::unique_ptr<Heap> m_privateHeap;
     std::unique_ptr<Heap> m_sharedHeap;

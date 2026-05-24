@@ -16,7 +16,9 @@ struct TrianglePassData {
     RenderGraphColorAttachment colorAttachment;
     MTL::RenderPipelineState* pipelineState = nullptr;
     MTL4::ArgumentTable* argumentTable = nullptr;
-    MTL::ResidencySet* residencySet = nullptr;
+    MTL::Heap* privateHeap = nullptr;
+    MTL::Heap* sharedHeap = nullptr;
+    RenderGraphResourceHandle frameUniformHandle;
 };
 }
 
@@ -27,8 +29,6 @@ TrianglePass::~TrianglePass() {
         m_argumentTable->release();
     if (m_pipelineState)
         m_pipelineState->release();
-    if (m_residencySet)
-        m_residencySet->release();
 }
 
 void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBufferPool) {
@@ -81,13 +81,6 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     m_privateHeap = std::make_unique<Heap>(device, 1024 * 1024, MTL::StorageModePrivate);
     m_sharedHeap = std::make_unique<Heap>(device, 1024, MTL::StorageModeShared);
 
-    MTL::ResidencySetDescriptor* rsDesc = MTL::ResidencySetDescriptor::alloc()->init()->autorelease();
-    m_residencySet = device->newResidencySet(rsDesc, &error);
-    LOG_ERROR_IF(!m_residencySet, "Failed to create triangle pass residency set.");
-    m_residencySet->addAllocation(m_privateHeap->GetNative());
-    m_residencySet->addAllocation(m_sharedHeap->GetNative());
-    m_residencySet->commit();
-
     Buffer positionBufferCopy(device, positions.data(), sizeof(positions), MTL::ResourceStorageModeShared);
     Buffer colorBufferCopy(device, colors.data(), sizeof(colors), MTL::ResourceStorageModeShared);
     m_positionBuffer = std::make_unique<Buffer>(*m_privateHeap, sizeof(positions), MTL::ResourceStorageModePrivate);
@@ -105,7 +98,7 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("Triangle Argument Table", NS::UTF8StringEncoding));
     argumentTableDescriptor->setInitializeBindings(true);
-    argumentTableDescriptor->setMaxBufferBindCount(1);
+    argumentTableDescriptor->setMaxBufferBindCount(2);
     m_argumentTable = device->newArgumentTable(argumentTableDescriptor, &error);
     LOG_ERROR_IF(!m_argumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
@@ -119,10 +112,11 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
 
 void TrianglePass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
+    RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
 
     graph.AddPass<TrianglePassData>(
         "Triangle",
-        [this, swapchainHandle](RenderGraphBuilder& builder, TrianglePassData& data) {
+        [this, swapchainHandle, frameUniformHandle](RenderGraphBuilder& builder, TrianglePassData& data, RenderGraphResources& resources) {
             data.colorAttachment = builder.WriteColor(swapchainHandle, RenderGraphColorAttachmentDesc{
                 .loadAction = MTL::LoadActionClear,
                 .storeAction = MTL::StoreActionStore,
@@ -130,9 +124,20 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
             });
             data.pipelineState = m_pipelineState;
             data.argumentTable = m_argumentTable;
-            data.residencySet = m_residencySet;
+            data.privateHeap = m_privateHeap->GetNative();
+            data.sharedHeap = m_sharedHeap->GetNative();
+            data.frameUniformHandle = frameUniformHandle;
+            builder.ReadBuffer(frameUniformHandle);
+
+            MTL::Buffer* frameUniformBuffer = resources.GetBuffer(frameUniformHandle);
+            data.argumentTable->setAddress(frameUniformBuffer->gpuAddress(), 1);
         },
         [](const TrianglePassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
+            MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
+            cmd.AddResource(frameUniformBuffer);
+            cmd.AddResource(data.privateHeap);
+            cmd.AddResource(data.sharedHeap);
+
             MTL::Texture* colorTexture = resources.GetTexture(data.colorAttachment.texture);
             LOG_ERROR_IF(!colorTexture, "Triangle pass has no color target.");
             LOG_ERROR_IF(!data.pipelineState, "Triangle pass pipeline state is null.");
@@ -145,7 +150,7 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
             colorAttachment->setClearColor(data.colorAttachment.desc.clearColor);
             colorAttachment->setStoreAction(data.colorAttachment.desc.storeAction);
 
-            MTL4::RenderCommandEncoder* commandEncoder = cmd.BeginRenderPass(passDescriptor, data.residencySet);
+            MTL4::RenderCommandEncoder* commandEncoder = cmd.BeginRenderPass(passDescriptor);
             LOG_ERROR_IF(!commandEncoder, "Failed to create render command encoder");
 
             MTL::Viewport viewport {

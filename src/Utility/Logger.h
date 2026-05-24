@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 #include <memory>
+#include <cstdlib>
 
 class Logger {
 public:
@@ -26,7 +27,11 @@ private:
 
 #define LOG_INFO(fmt, ...) Logger::GetInstance().GetLogger()->info(fmt __VA_OPT__(,) __VA_ARGS__)
 #define LOG_WARN(fmt, ...) Logger::GetInstance().GetLogger()->warn(fmt __VA_OPT__(,) __VA_ARGS__)
-#define LOG_ERROR(fmt, ...) Logger::GetInstance().GetLogger()->error(fmt __VA_OPT__(,) __VA_ARGS__)
+#define LOG_ERROR(fmt, ...) \
+    do { \
+        Logger::GetInstance().GetLogger()->error(fmt __VA_OPT__(,) __VA_ARGS__); \
+        std::abort(); \
+    } while (0)
 
 #define LOG_INFO_IF(condition, fmt, ...) \
     do { \
@@ -46,6 +51,7 @@ private:
     do { \
         if (condition) { \
             Logger::GetInstance().GetLogger()->error(fmt __VA_OPT__(,) __VA_ARGS__); \
+            std::abort(); \
         } \
     } while (0)
 

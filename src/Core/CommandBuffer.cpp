@@ -67,6 +67,8 @@ MTL4::ComputeCommandEncoder* CommandBuffer::BeginBlitPass() {
 }
 
 void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
+    LOG_WARN_IF(!m_hasBegun, "Command Buffer has not begun but you submit it.");
+
     if (m_residencySet->allocationCount() > 0) {
         m_residencySet->commit();
         m_commandBuffer->useResidencySet(m_residencySet.get());

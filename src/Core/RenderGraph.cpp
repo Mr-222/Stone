@@ -14,6 +14,14 @@ RenderGraphResourceHandle RenderGraph::RegisterTexture(const std::string& name, 
     return m_resources.RegisterTexture(name, texture);
 }
 
+RenderGraphResourceHandle RenderGraph::DeclareBuffer(const std::string &name) {
+    return m_resources.DeclareBuffer(name);
+}
+
+RenderGraphResourceHandle RenderGraph::RegisterBuffer(const std::string &name, const Buffer& buffer) {
+    return m_resources.RegisterBuffer(name, buffer);
+}
+
 void RenderGraph::Compile() {
     for (const auto& pass : m_passes) {
         for (const RenderGraphResourceAccess& access : pass->GetResourceAccesses()) {
@@ -25,7 +33,10 @@ void RenderGraph::Compile() {
                     pass->GetName());
                 break;
             case RenderGraphResourceType::Buffer:
-                // TODO
+                LOG_ERROR_IF(
+                    !m_resources.IsBufferHandleDeclared(access.resource),
+                    "Render pass '{} declared an invalid buffer dependency.'",
+                    pass->GetName());
                 break;
             }
         }

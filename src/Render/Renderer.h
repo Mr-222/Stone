@@ -7,6 +7,8 @@ class Window;
 class CommandBufferPool;
 class RenderGraph;
 class TrianglePass;
+class Camera;
+class Buffer;
 namespace MTL4 {
     class CommandBuffer;
 }
@@ -27,4 +29,10 @@ private:
     std::shared_ptr<CommandBufferPool> m_commandBufferPool;
     std::unique_ptr<RenderGraph> m_renderGraph;
     std::unique_ptr<TrianglePass> m_trianglePass;
+    std::unique_ptr<Camera> m_camera;
+    std::unique_ptr<Buffer> m_frameUniform;
+
+    bool m_firstMouse = true;
+    double m_lastX;
+    double m_lastY;
 };

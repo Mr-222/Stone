@@ -15,8 +15,8 @@ public:
     CommandBuffer& operator=(CommandBuffer&&) = delete;
 
     void AddResource(const MTL::Allocation* allocation);
-    MTL4::RenderCommandEncoder*   BeginRenderPass(MTL4::RenderPassDescriptor* desc, MTL::ResidencySet* set = nullptr);
-    MTL4::ComputeCommandEncoder*  BeginBlitPass(MTL::ResidencySet* set = nullptr);
+    MTL4::RenderCommandEncoder*   BeginRenderPass(MTL4::RenderPassDescriptor* desc);
+    MTL4::ComputeCommandEncoder*  BeginBlitPass();
     void SubmitTo(MTL4::CommandQueue* submitQueue);
 
 private:

@@ -22,10 +22,13 @@ public:
     RenderGraphResourceHandle DeclareTexture(const std::string& name);
     RenderGraphResourceHandle RegisterTexture(const std::string& name, const Texture& texture);
 
+    RenderGraphResourceHandle DeclareBuffer(const std::string& name);
+    RenderGraphResourceHandle RegisterBuffer(const std::string& nsme, const Buffer& buffer);
+
     template<typename PassData>
     void AddPass(
         const std::string& name,
-        std::function<void(RenderGraphBuilder&, PassData&)> setupFn,
+        std::function<void(RenderGraphBuilder&, PassData&, RenderGraphResources&)> setupFn,
         std::function<void(const PassData&, RenderGraphResources&, CommandBuffer&)> executeFn
     );
 
@@ -44,14 +47,14 @@ private:
 template<typename PassData>
 void RenderGraph::AddPass(
     const std::string& name,
-    std::function<void(RenderGraphBuilder&, PassData&)> setupFn,
+    std::function<void(RenderGraphBuilder&, PassData&, RenderGraphResources&)> setupFn,
     std::function<void(const PassData&, RenderGraphResources&, CommandBuffer&)> executeFn)
 {
     // TODO: Add name as key to dependency map
 
     PassData data;
     RenderGraphBuilder builder;
-    setupFn(builder, data);
+    setupFn(builder, data, m_resources);
 
     auto node = std::make_unique<RenderPassNode<PassData>>(
         name,

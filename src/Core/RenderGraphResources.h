@@ -9,6 +9,7 @@
 #include <Metal/Metal.hpp>
 
 #include "Texture.h"
+#include "Buffer.h"
 
 constexpr std::string kSwapchainImageName = "swapchain_image";
 
@@ -38,12 +39,18 @@ public:
 
     RenderGraphResourceHandle DeclareTexture(std::string name);
     RenderGraphResourceHandle RegisterTexture(std::string name, const Texture& texture);
-
     MTL::Texture* GetTexture(RenderGraphResourceHandle handle) const;
     RenderGraphResourceHandle GetTextureHandle(const std::string& name) const;
 
+    RenderGraphResourceHandle DeclareBuffer(std::string name);
+    RenderGraphResourceHandle RegisterBuffer(std::string name, const Buffer& buffer);
+    MTL::Buffer* GetBuffer(RenderGraphResourceHandle handle) const;
+    RenderGraphResourceHandle GetBufferHandle(const std::string& name) const;
+
     bool IsTextureHandleValid(RenderGraphResourceHandle handle) const;
     bool IsTextureHandleDeclared(RenderGraphResourceHandle handle) const;
+    bool IsBufferHandleValid(RenderGraphResourceHandle handle) const;
+    bool IsBufferHandleDeclared(RenderGraphResourceHandle handle) const;
     const std::string& GetTextureName(RenderGraphResourceHandle handle) const;
 
 private:

@@ -64,7 +64,7 @@ void Buffer::Update(const void *data, size_t size, size_t offset) {
     std::memcpy(destPtr, data, size);
 
     // If using
-    if (m_buffer->storageMode() == MTL::StorageModeShared)
+    if (m_buffer->storageMode() == MTL::StorageModeManaged)
         m_buffer->didModifyRange(NS::Range::Make(offset, size));
 }
 

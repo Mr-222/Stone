@@ -31,4 +31,8 @@ private:
     std::unique_ptr<TrianglePass> m_trianglePass;
     std::unique_ptr<Camera> m_camera;
     std::unique_ptr<Buffer> m_frameUniform;
+
+    bool m_firstMouse = true;
+    double m_lastX;
+    double m_lastY;
 };

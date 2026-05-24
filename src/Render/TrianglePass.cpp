@@ -164,7 +164,7 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
 
             commandEncoder->setRenderPipelineState(data.pipelineState);
             commandEncoder->setViewport(viewport);
-            commandEncoder->setCullMode(MTL::CullModeBack);
+            commandEncoder->setCullMode(MTL::CullModeNone);
             commandEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
             commandEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex);
             commandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, 0, 3);

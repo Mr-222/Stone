@@ -43,7 +43,7 @@ private:
     glm::vec3 m_right;
     glm::quat m_rotation;
     float m_movementSpeed = 3.f;
-    float m_mouseSensitivity = .1f;
+    float m_mouseSensitivity = .05f;
 
     float m_fov;
     float m_aspectRatio; // width / height

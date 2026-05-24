@@ -9,6 +9,7 @@
 #include "Core/RenderGraph.h"
 #include "Camera.h"
 #include "TrianglePass.h"
+#include <GLFW/glfw3.h>
 
 struct FrameUniform {
     glm::mat4 viewProjection;
@@ -48,8 +49,46 @@ void Renderer::Setup() {
 }
 
 void Renderer::Run() {
+    glfwSetWindowUserPointer(m_window->GetGLFWWindow(), this);
+    glfwSetInputMode(m_window->GetGLFWWindow(), GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+    glfwSetCursorPosCallback(m_window->GetGLFWWindow(), [](GLFWwindow* window, double xpos, double ypos) {
+        Renderer* renderer = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
+
+        // Prevent the camera from abruptly jumping or spinning wildly the very first time
+        // user move mouse after the application starts.
+        if (renderer->m_firstMouse) {
+            renderer->m_lastX = xpos;
+            renderer->m_lastY = ypos;
+            renderer->m_firstMouse = false;
+        }
+
+        float xoffset = static_cast<float>(xpos - renderer->m_lastX);
+        float yoffset = static_cast<float>(ypos - renderer->m_lastY);
+
+        renderer->m_lastX = xpos;
+        renderer->m_lastY = ypos;
+
+        renderer->m_camera->ProcessMouseMovement(xoffset, yoffset);
+    });
+
+    float lastFrameTime = glfwGetTime();
+
     while (!m_window->ShouldClose()) {
         m_window->PollEvents();
+
+        float currentFrameTime = glfwGetTime();
+        float deltaTime = currentFrameTime - lastFrameTime;
+        lastFrameTime = currentFrameTime;
+
+        GLFWwindow* glfwWindow = m_window->GetGLFWWindow();
+        if (glfwGetKey(glfwWindow, GLFW_KEY_W) == GLFW_PRESS)
+            m_camera->ProcessKeyboard(Movement::FORWARD, deltaTime);
+        if (glfwGetKey(glfwWindow, GLFW_KEY_S) == GLFW_PRESS)
+            m_camera->ProcessKeyboard(Movement::BACKWARD, deltaTime);
+        if (glfwGetKey(glfwWindow, GLFW_KEY_A) == GLFW_PRESS)
+            m_camera->ProcessKeyboard(Movement::LEFT, deltaTime);
+        if (glfwGetKey(glfwWindow, GLFW_KEY_D) == GLFW_PRESS)
+            m_camera->ProcessKeyboard(Movement::RIGHT, deltaTime);
 
         m_metalContext->BeginFrame();
 

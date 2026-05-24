@@ -18,6 +18,9 @@ public:
     void UploadFrom(const Buffer& src, CommandBuffer& cmd) const;
     void UploadFromFlush(const Buffer& src, CommandBufferPool& pool, MTL4::CommandQueue* queue) const;
 
+    void Update(const void* data, size_t size, size_t offset = 0);
+    void UpdateStaged(const void* data, size_t size, size_t offset, CommandBufferPool& pool, MTL4::CommandQueue* queue);
+
     MTL::Buffer* GetNative() const { return m_buffer; }
     size_t       GetSize()         const { return m_size; }
     uint64_t     GetGPUAddress()   const { return m_buffer->gpuAddress(); }

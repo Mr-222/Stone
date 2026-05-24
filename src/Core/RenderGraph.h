@@ -22,6 +22,9 @@ public:
     RenderGraphResourceHandle DeclareTexture(const std::string& name);
     RenderGraphResourceHandle RegisterTexture(const std::string& name, const Texture& texture);
 
+    RenderGraphResourceHandle DeclareBuffer(const std::string& name);
+    RenderGraphResourceHandle RegisterBuffer(const std::string& nsme, const Buffer& buffer);
+
     template<typename PassData>
     void AddPass(
         const std::string& name,

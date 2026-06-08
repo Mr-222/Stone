@@ -50,7 +50,7 @@ void Renderer::Setup() {
 
 void Renderer::Run() {
     glfwSetWindowUserPointer(m_window->GetGLFWWindow(), this);
-    glfwSetInputMode(m_window->GetGLFWWindow(), GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+    glfwSetInputMode(m_window->GetGLFWWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetCursorPosCallback(m_window->GetGLFWWindow(), [](GLFWwindow* window, double xpos, double ypos) {
         Renderer* renderer = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
 

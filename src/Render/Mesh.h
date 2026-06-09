@@ -40,7 +40,7 @@ struct Mesh
     Mesh& operator=(Mesh&&) noexcept = default;
 };
 
-struct SceneObject
+struct RenderObject
 {
     uint32_t firstSubmesh;
     uint32_t submeshCount;

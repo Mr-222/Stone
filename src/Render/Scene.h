@@ -9,7 +9,6 @@
 
 class Scene {
 public:
-    void Init();
     void LoadGltf(std::filesystem::path path);
     void CommitToGPU(MTL::Device* device);
 
@@ -25,8 +24,7 @@ private:
     std::vector<Vertex> globalVertices;
     std::vector<uint32_t> globalIndices;
     std::vector<SubMesh> submeshes;
-    std::vector<SceneObject> objects;
-    bool gltfLoaded = false;
+    std::vector<RenderObject> objects;
 
     std::unique_ptr<Buffer> vertexBuffer;
     std::unique_ptr<Buffer> indexBuffer;

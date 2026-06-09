@@ -125,24 +125,7 @@ Scene::MeshRange Scene::MergeMesh(Mesh&& mesh) {
     return MeshRange{firstSubmesh, submeshCount};
 }
 
-void Scene::Init() {
-    auto sphere = MergeMesh(GeometryGenerator::Sphere(
-        {0.f, 0.f, 0.f},
-        1.0f,
-        32));
-    objects.push_back({
-        sphere.firstSubmesh,
-        sphere.submeshCount,
-        glm::mat4(1.f),
-    });
-
-    LoadGltf("path/to/scene.gltf");
-}
-
 void Scene::LoadGltf(std::filesystem::path path) {
-    const bool alreadyLoaded = gltfLoaded;
-    LOG_ERROR_IF(alreadyLoaded, "Scene::LoadGltf can only be called once");
-
     const bool fileExists = std::filesystem::is_regular_file(path);
     LOG_ERROR_IF(!fileExists, "Failed to load glTF file {}", path.string());
 
@@ -167,7 +150,6 @@ void Scene::LoadGltf(std::filesystem::path path) {
     for (auto& gltfMesh : asset->meshes) {
         meshRanges.emplace_back(MergeMesh(LoadMesh(asset.get(), gltfMesh)));
     }
-    gltfLoaded = true;
 
     const bool hasScenes = !asset->scenes.empty();
     LOG_ERROR_IF(!hasScenes, "glTF file {} has no scenes.", path.string());
@@ -180,7 +162,7 @@ void Scene::LoadGltf(std::filesystem::path path) {
         LOG_ERROR_IF(invalidMeshIndex, "Mesh index {} exceeds mesh range", node.meshIndex.value());
 
         const auto& meshRange = meshRanges[node.meshIndex.value()];
-        objects.push_back(SceneObject{
+        objects.push_back(RenderObject{
             meshRange.firstSubmesh,
             meshRange.submeshCount,
             ToGlm(transform),

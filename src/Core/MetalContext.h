@@ -19,8 +19,11 @@ public:
     CA::MetalDrawable* GetCurrentDrawable() const { return m_currentDrawable; }
     MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT]; }
     MTL4::CommandQueue* GetCommandQueue() const { return m_queue; }
+    MTL::PixelFormat GetSwapchainPixelFormat() const { return kSwapchainPixelFormat; }
 
 private:
+    static constexpr MTL::PixelFormat kSwapchainPixelFormat = MTL::PixelFormatRGBA16Float;
+
     MTL::Device* m_device;
     MTL4::CommandQueue* m_queue;
 

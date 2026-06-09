@@ -54,7 +54,7 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
 
     pipelineDescriptor->setVertexFunctionDescriptor(vertexFunc);
     pipelineDescriptor->setFragmentFunctionDescriptor(fragmentFunc);
-    pipelineDescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+    pipelineDescriptor->colorAttachments()->object(0)->setPixelFormat(context.GetSwapchainPixelFormat());
     pipelineDescriptor->setInputPrimitiveTopology(MTL::PrimitiveTopologyClassTriangle);
 
     MTL4::CompilerTaskOptions* taskOptions = MTL4::CompilerTaskOptions::alloc()->init()->autorelease();
@@ -72,10 +72,13 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
         { 0.5f, -0.5f, 0.f, 1.f },
         { 0.f, 0.5f, 0.f, 1.f },
     }};
+
+    // enable EDR rendering by using color
+    // value larger than 1.0 (SDR bright)
     std::array<glm::vec4, 3> colors = {{
-        { 1.f, 0.f, 0.f, 1.f },
-        { 0.f, 1.f, 0.f, 1.f },
-        { 0.f, 0.f, 1.f, 1.f },
+        { 10.f, 0.f, 0.f, 1.f },
+        { 0.f, 10.f, 0.f, 1.f },
+        { 0.f, 0.f, 10.f, 1.f },
     }};
 
     m_privateHeap = std::make_unique<Heap>(device, 1024 * 1024, MTL::StorageModePrivate);

@@ -7,6 +7,15 @@
 #include "Utility/Logger.h"
 #include "GeometryGenerator.h"
 
+struct RenderObjectGPUEntry {
+    uint32_t baseVertexOffset;
+    uint32_t firstIndex;
+    uint32_t indexCount;
+    // TODO: Add properties for compute shader culling (CellBound, MaterialID, etc.)
+    uint32_t pad0;
+    glm::mat4 transform;
+};
+
 glm::mat4 ToGlm(const fastgltf::math::fmat4x4& matrix) {
     glm::mat4 result(1.f);
     for (std::size_t column = 0; column < 4; ++column) {
@@ -173,29 +182,38 @@ void Scene::LoadGltf(std::filesystem::path path) {
 void Scene::CommitToGPU(MTL::Device* device) {
     LOG_ERROR_IF(!device, "Failed to commit scene to GPU: device is null");
 
-    const bool hasVertices = !globalVertices.empty();
-    LOG_WARN_IF(!hasVertices, "Scene has no vertices to commit");
-    if (hasVertices) {
-        vertexBuffer = std::make_unique<Buffer>(
-            device,
-            globalVertices.data(),
-            globalVertices.size() * sizeof(Vertex),
-            MTL::ResourceStorageModeShared);
-    }
-    else {
-        vertexBuffer.reset();
-    }
+    LOG_WARN_IF(globalVertices.empty(), "Scene has no vertices to commit");
+    vertexBuffer = std::make_unique<Buffer>(
+        device,
+        globalVertices.data(),
+        globalVertices.size() * sizeof(Vertex),
+        MTL::ResourceStorageModeShared);
 
-    const bool hasIndices = !globalIndices.empty();
-    LOG_WARN_IF(!hasIndices, "Scene has no indices to commit");
-    if (hasIndices) {
-        indexBuffer = std::make_unique<Buffer>(
-            device,
-            globalIndices.data(),
-            globalIndices.size() * sizeof(uint32_t),
-            MTL::ResourceStorageModeShared);
+    LOG_WARN_IF(globalIndices.empty(), "Scene has no indices to commit");
+    indexBuffer = std::make_unique<Buffer>(
+        device,
+        globalIndices.data(),
+        globalIndices.size() * sizeof(uint32_t),
+        MTL::ResourceStorageModeShared);
+
+    std::vector<RenderObjectGPUEntry> roEntries{};
+    roEntries.reserve(objects.size());
+    for (const RenderObject& renderObj : objects) {
+        RenderObjectGPUEntry entry{};
+
+        entry.transform = renderObj.transform;
+        entry.baseVertexOffset = submeshes[renderObj.firstSubmesh].vertexOffset;
+        entry.firstIndex = submeshes[renderObj.firstSubmesh].firstIndex;
+
+        entry.indexCount = 0;
+        for (int i = 0; i < renderObj.submeshCount; ++i)
+            entry.indexCount += submeshes[renderObj.firstSubmesh + i].indexCount;
+
+        roEntries.push_back(entry);
     }
-    else {
-        indexBuffer.reset();
-    }
+    renderObjBuffer = std::make_unique<Buffer>(
+        device,
+        roEntries.data(),
+        roEntries.size() * sizeof(RenderObjectGPUEntry),
+        MTL::ResourceStorageModeShared);
 }

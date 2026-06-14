@@ -12,7 +12,7 @@ public:
     void LoadGltf(std::filesystem::path path);
     void CommitToGPU(MTL::Device* device);
 
-private:
+public:
     struct MeshRange
     {
         uint32_t firstSubmesh;
@@ -28,4 +28,5 @@ private:
 
     std::unique_ptr<Buffer> vertexBuffer;
     std::unique_ptr<Buffer> indexBuffer;
+    std::unique_ptr<Buffer> renderObjBuffer;
 };

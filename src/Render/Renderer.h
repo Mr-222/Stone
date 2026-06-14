@@ -27,8 +27,11 @@ private:
     std::shared_ptr<MetalContext> m_metalContext;
     std::unique_ptr<Window> m_window;
     std::shared_ptr<CommandBufferPool> m_commandBufferPool;
+
     std::unique_ptr<RenderGraph> m_renderGraph;
+    std::unique_ptr<Buffer> m_indirectArgBuffer;
     std::unique_ptr<TrianglePass> m_trianglePass;
+
     std::unique_ptr<Camera> m_camera;
     std::unique_ptr<Buffer> m_frameUniform;
 

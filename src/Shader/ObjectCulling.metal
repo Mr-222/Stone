@@ -1,35 +1,4 @@
-#include <metal_stdlib>
-using namespace metal;
-
-struct RenderObject
-{
-    uint32_t baseVertex;
-    uint32_t firstIndex;
-    uint32_t indexCount;
-    uint32_t pad0;
-    float4x4 worldMat;
-};
-
-struct IndirectCommandBufferExecutionRange
-{
-    uint32_t location;
-    atomic_uint length;
-};
-
-struct IndexBufferInfo
-{
-    uint64_t addr;
-};
-
-struct Visibility
-{
-    uint32_t objID;
-};
-
-struct ICBContainer
-{
-    command_buffer commandBuffer [[id(0)]];
-};
+#include "ShaderTypes.h"
 
 // TODO: Implement actual culling logic
 bool IsVisible() {
@@ -38,13 +7,13 @@ bool IsVisible() {
 
 kernel void objectCulling_main(
     uint objID [[thread_position_in_grid]],
-    device IndirectCommandBufferExecutionRange& executionRange [[buffer(0)]],
-    constant IndexBufferInfo& indexBufferInfo [[buffer(1)]],
-    device RenderObject* objects [[buffer(2)]],
-    device Visibility* visibilities[[buffer(3)]],
-    device ICBContainer& icb [[buffer(4)]])
+    device IndirectCommandBufferExecutionRange& executionRange [[buffer(ObjectCullingBufferIndex::ExecutionRange)]],
+    constant IndexBufferInfo& indexBufferInfo [[buffer(ObjectCullingBufferIndex::IndexBufferInfo)]],
+    device GPURenderObject* objects [[buffer(ObjectCullingBufferIndex::RenderObjects)]],
+    device Visibility* visibilities [[buffer(ObjectCullingBufferIndex::Visibilities)]],
+    device ObjectCullingICBContainer& icb [[buffer(ObjectCullingBufferIndex::ICBContainer)]])
 {
-    device RenderObject& obj = objects[objID];
+    device GPURenderObject& obj = objects[objID];
 
     if (IsVisible()) {
         uint localSlot = atomic_fetch_add_explicit(&executionRange.length, 1, memory_order_relaxed);

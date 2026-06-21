@@ -1,14 +1,4 @@
-#include <metal_stdlib>
-using namespace metal;
-
-struct BindlessArguments {
-    const device float4* positions [[id(0)]];
-    const device float4* colors    [[id(1)]];
-};
-
-struct FrameUniform {
-    float4x4 viewProjection;
-};
+#include "ShaderTypes.h"
 
 struct VertexOut {
     float4 position [[position]];
@@ -17,8 +7,8 @@ struct VertexOut {
 
 vertex VertexOut vertex_main(
     uint vertexID [[vertex_id]],
-    constant BindlessArguments& args [[buffer(0)]],
-    constant FrameUniform& frame [[buffer(1)]])
+    constant TriangleBindlessArguments& args [[buffer(TriangleBufferIndex::BindlessArguments)]],
+    constant FrameUniform& frame [[buffer(TriangleBufferIndex::FrameUniform)]])
 {
     VertexOut out;
     out.position = frame.viewProjection * args.positions[vertexID];

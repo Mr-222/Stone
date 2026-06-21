@@ -2,6 +2,7 @@
 
 #include "Core/Buffer.h"
 #include "Core/RenderGraph.h"
+#include "Shader/ShaderTypes.h"
 #include "Utility/Logger.h"
 #include "Utility/ShaderLibrary.h"
 
@@ -63,7 +64,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
 
     MTL::Function* computeFunction = shaderLibrary.GetFunction("objectCulling_main");
 
-    MTL::ArgumentEncoder* argumentEncoder = computeFunction->newArgumentEncoder(4);
+    MTL::ArgumentEncoder* argumentEncoder = computeFunction->newArgumentEncoder(static_cast<NS::UInteger>(ObjectCullingBufferIndex::ICBContainer));
     LOG_ERROR_IF(!argumentEncoder, "Failed to create argument encoder for object culling's ICB");
     m_icbArgumentBuffer = std::make_unique<Buffer>(
         device,
@@ -80,13 +81,13 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("Object Culling pass argument table", NS::UTF8StringEncoding));
     argumentTableDescriptor->setInitializeBindings(true);
-    argumentTableDescriptor->setMaxBufferBindCount(5);
+    argumentTableDescriptor->setMaxBufferBindCount(static_cast<NS::UInteger>(ObjectCullingBufferIndex::MaxBufferBindCount));
     m_argumentTable = device->newArgumentTable(argumentTableDescriptor, &error);
     LOG_ERROR_IF(!m_argumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    m_argumentTable->setAddress(m_ICBExecutionRangeBuffer->GetGPUAddress(), 0);
-    m_argumentTable->setAddress(m_visibilityBuffer->GetGPUAddress(), 3);
-    m_argumentTable->setAddress(m_icbArgumentBuffer->GetGPUAddress(), 4);
+    m_argumentTable->setAddress(m_ICBExecutionRangeBuffer->GetGPUAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::ExecutionRange));
+    m_argumentTable->setAddress(m_visibilityBuffer->GetGPUAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::Visibilities));
+    m_argumentTable->setAddress(m_icbArgumentBuffer->GetGPUAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::ICBContainer));
 }
 
 void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
@@ -113,10 +114,10 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             // TODO: Add WriteBuffer for ICB
 
             MTL::Buffer* indexBufferInfoBuffer = resources.GetBuffer(indexBufferInfoBufferHandle);
-            m_argumentTable->setAddress(indexBufferInfoBuffer->gpuAddress(), 1);
+            m_argumentTable->setAddress(indexBufferInfoBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::IndexBufferInfo));
 
             MTL::Buffer* renderObjectBuffer = resources.GetBuffer(renderObjectsBufferHandle);
-            m_argumentTable->setAddress(renderObjectBuffer->gpuAddress(), 2);
+            m_argumentTable->setAddress(renderObjectBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::RenderObjects));
         },
         [this](const ObjectCullingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Buffer* globalIndexBuffer = resources.GetBuffer(data.globalIndexBufferHandle);

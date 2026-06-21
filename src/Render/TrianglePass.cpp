@@ -7,6 +7,7 @@
 #include "Core/Heap.h"
 #include "Core/MetalContext.h"
 #include "Core/RenderGraph.h"
+#include "Shader/ShaderTypes.h"
 #include "Utility/Logger.h"
 #include "Utility/ShaderLibrary.h"
 
@@ -58,7 +59,7 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
 
     MTL::Function* vertexFunction = shaderLibrary.GetFunction("vertex_main");
 
-    MTL::ArgumentEncoder* argumentEncoder = vertexFunction->newArgumentEncoder(0);
+    MTL::ArgumentEncoder* argumentEncoder = vertexFunction->newArgumentEncoder(static_cast<NS::UInteger>(TriangleBufferIndex::BindlessArguments));
     LOG_ERROR_IF(!argumentEncoder, "Failed to create argument encoder for triangle bindings");
 
     std::array<glm::vec4, 3> positions = {{
@@ -86,17 +87,17 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     m_argumentBuffer = std::make_unique<Buffer>(*m_sharedHeap, argumentEncoder->encodedLength(), MTL::ResourceStorageModeShared);
 
     argumentEncoder->setArgumentBuffer(m_argumentBuffer->GetNative(), 0);
-    argumentEncoder->setBuffer(m_positionBuffer->GetNative(), 0, 0);
-    argumentEncoder->setBuffer(m_colorBuffer->GetNative(), 0, 1);
+    argumentEncoder->setBuffer(m_positionBuffer->GetNative(), 0, static_cast<NS::UInteger>(TriangleBindlessArgumentID::Positions));
+    argumentEncoder->setBuffer(m_colorBuffer->GetNative(), 0, static_cast<NS::UInteger>(TriangleBindlessArgumentID::Colors));
 
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("Triangle Argument Table", NS::UTF8StringEncoding));
     argumentTableDescriptor->setInitializeBindings(true);
-    argumentTableDescriptor->setMaxBufferBindCount(2);
+    argumentTableDescriptor->setMaxBufferBindCount(static_cast<NS::UInteger>(TriangleBufferIndex::MaxBufferBindCount));
     m_argumentTable = device->newArgumentTable(argumentTableDescriptor, &error);
     LOG_ERROR_IF(!m_argumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    m_argumentTable->setAddress(m_argumentBuffer->GetGPUAddress(), 0);
+    m_argumentTable->setAddress(m_argumentBuffer->GetGPUAddress(), static_cast<NS::UInteger>(TriangleBufferIndex::BindlessArguments));
 
     argumentEncoder->release();
     compiler->release();
@@ -122,7 +123,7 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
             builder.ReadBuffer(frameUniformHandle);
 
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(frameUniformHandle);
-            data.argumentTable->setAddress(frameUniformBuffer->gpuAddress(), 1);
+            data.argumentTable->setAddress(frameUniformBuffer->gpuAddress(), static_cast<NS::UInteger>(TriangleBufferIndex::FrameUniform));
         },
         [](const TrianglePassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);

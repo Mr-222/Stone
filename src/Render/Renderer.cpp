@@ -1,15 +1,17 @@
 #include "Renderer.h"
 
 #include <memory>
+#include <GLFW/glfw3.h>
 
 #include "Core/CommandBufferPool.h"
 #include "Core/MetalContext.h"
 #include "Core/Texture.h"
 #include "Core/Window.h"
 #include "Core/RenderGraph.h"
-#include "Camera.h"
-#include "TrianglePass.h"
-#include <GLFW/glfw3.h>
+#include "Render/Camera.h"
+#include "Render/TrianglePass.h"
+#include "Render/ObjectCullingPass.h"
+#include "Render/Scene.h"
 
 struct FrameUniform {
     glm::mat4 viewProjection;
@@ -41,9 +43,18 @@ void Renderer::Setup() {
                         MTL::ResourceStorageModeShared);
     m_renderGraph->RegisterBuffer("frameUniform", *m_frameUniform);
 
+    m_scene = std::make_unique<Scene>();
+    m_scene->LoadGltf("/Users/sunyutong/Downloads/glTF-Sample-Assets-main/Models/FlightHelmet/glTF/FlightHelmet.gltf");
+    m_scene->CommitToGPU(m_metalContext->GetDevice());
+    m_scene->RegisterBuffers(*m_renderGraph);
+
     m_trianglePass = std::make_unique<TrianglePass>();
     m_trianglePass->Setup(*m_metalContext, *m_commandBufferPool);
     m_trianglePass->AddToGraph(*m_renderGraph);
+
+    m_objectCullingPass = std::make_unique<ObjectCullingPass>();
+    m_objectCullingPass->Setup(*m_metalContext, m_scene->m_objects.size());
+    m_objectCullingPass->AddToGraph(*m_renderGraph);
 
     m_renderGraph->Compile();
 }

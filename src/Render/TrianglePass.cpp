@@ -11,7 +11,6 @@
 
 constexpr const char* kTriangleShaderLibrary = STONE_SHADER_DIR "/Triangle.metallib";
 
-namespace {
 struct TrianglePassData {
     RenderGraphColorAttachment colorAttachment;
     MTL::RenderPipelineState* pipelineState = nullptr;
@@ -20,7 +19,6 @@ struct TrianglePassData {
     MTL::Heap* sharedHeap = nullptr;
     RenderGraphResourceHandle frameUniformHandle;
 };
-}
 
 TrianglePass::TrianglePass() = default;
 
@@ -35,8 +33,6 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     MTL::Device* device = context.GetDevice();
 
     NS::Error* error = nullptr;
-    MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);
-    LOG_ERROR_IF(!compiler, "Failed to create MTL::Compiler");
 
     NS::String* libraryPath = NS::String::string(kTriangleShaderLibrary, NS::UTF8StringEncoding);
     MTL::Library* library = device->newLibrary(libraryPath, &error);
@@ -57,6 +53,8 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     pipelineDescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
     pipelineDescriptor->setInputPrimitiveTopology(MTL::PrimitiveTopologyClassTriangle);
 
+    MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);
+    LOG_ERROR_IF(!compiler, "Failed to create MTL::Compiler");
     MTL4::CompilerTaskOptions* taskOptions = MTL4::CompilerTaskOptions::alloc()->init()->autorelease();
     m_pipelineState = compiler->newRenderPipelineState(pipelineDescriptor, taskOptions, &error);
     LOG_ERROR_IF(!m_pipelineState, "Failed to create render pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
@@ -150,8 +148,8 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
             colorAttachment->setClearColor(data.colorAttachment.desc.clearColor);
             colorAttachment->setStoreAction(data.colorAttachment.desc.storeAction);
 
-            MTL4::RenderCommandEncoder* commandEncoder = cmd.BeginRenderPass(passDescriptor);
-            LOG_ERROR_IF(!commandEncoder, "Failed to create render command encoder");
+            MTL4::RenderCommandEncoder* renderEncoder = cmd.BeginRenderPass(passDescriptor);
+            LOG_ERROR_IF(!renderEncoder, "Failed to create render command encoder");
 
             MTL::Viewport viewport {
                 0.0,
@@ -162,12 +160,12 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
                 1.0
             };
 
-            commandEncoder->setRenderPipelineState(data.pipelineState);
-            commandEncoder->setViewport(viewport);
-            commandEncoder->setCullMode(MTL::CullModeNone);
-            commandEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
-            commandEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex);
-            commandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, 0, 3);
-            commandEncoder->endEncoding();
+            renderEncoder->setRenderPipelineState(data.pipelineState);
+            renderEncoder->setViewport(viewport);
+            renderEncoder->setCullMode(MTL::CullModeNone);
+            renderEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+            renderEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex);
+            renderEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, 0, 3);
+            renderEncoder->endEncoding();
         });
 }

@@ -66,6 +66,14 @@ MTL4::ComputeCommandEncoder* CommandBuffer::BeginBlitPass() {
     return m_commandBuffer->computeCommandEncoder();
 }
 
+MTL4::ComputeCommandEncoder* CommandBuffer::BeginComputePass() {
+    if (!m_hasBegun) {
+        m_hasBegun = true;
+        m_commandBuffer->beginCommandBuffer(m_allocator);
+    }
+    return m_commandBuffer->computeCommandEncoder();
+}
+
 void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
     LOG_WARN_IF(!m_hasBegun, "Command Buffer has not begun but you submit it.");
 

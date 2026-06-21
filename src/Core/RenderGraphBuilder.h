@@ -45,6 +45,14 @@ public:
         });
     }
 
+    void WriteBuffer(RenderGraphResourceHandle buffer) {
+         m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = buffer,
+            .resourceType = RenderGraphResourceType::Buffer,
+            .accessType = RenderGraphResourceAccessType::Write,
+         });
+    }
+
     RenderGraphColorAttachment WriteColor(RenderGraphResourceHandle texture, const RenderGraphColorAttachmentDesc& desc) {
         m_resourceAccesses.push_back(RenderGraphResourceAccess{
             .resource = texture,

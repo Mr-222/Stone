@@ -44,7 +44,7 @@ void Renderer::Setup() {
     m_renderGraph->RegisterBuffer("frameUniform", *m_frameUniform);
 
     m_scene = std::make_unique<Scene>();
-    m_scene->LoadGltf("/Users/sunyutong/Downloads/glTF-Sample-Assets-main/Models/FlightHelmet/glTF/FlightHelmet.gltf");
+    m_scene->LoadGltf("./Models/FlightHelmet/glTF/FlightHelmet.gltf");
     m_scene->CommitToGPU(m_metalContext->GetDevice());
     m_scene->RegisterBuffers(*m_renderGraph);
 

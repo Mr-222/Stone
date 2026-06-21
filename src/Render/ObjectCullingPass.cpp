@@ -3,6 +3,7 @@
 #include "Core/Buffer.h"
 #include "Core/RenderGraph.h"
 #include "Utility/Logger.h"
+#include "Utility/ShaderLibrary.h"
 
 constexpr const char* kObjetcCullingShaderLibrary = STONE_SHADER_DIR "/ObjectCulling.metallib";
 
@@ -44,17 +45,15 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
 
     NS::Error* error = nullptr;
 
-    NS::String* libraryPath = NS::String::string(kObjetcCullingShaderLibrary, NS::UTF8StringEncoding);
-    MTL::Library* library = device->newLibrary(libraryPath, &error);
-    LOG_ERROR_IF(!library, "Failed to load shader library {}: {}", kObjetcCullingShaderLibrary, error ? error->localizedDescription()->utf8String() : "unknown error");
+    ShaderLibrary shaderLibrary = LoadShaderLibrary(device, kObjetcCullingShaderLibrary, {
+        "objectCulling_main",
+    });
 
     MTL4::ComputePipelineDescriptor* pipelineDescriptor = MTL4::ComputePipelineDescriptor::alloc()->init()->autorelease();
 
-    MTL4::LibraryFunctionDescriptor* computeFunc = MTL4::LibraryFunctionDescriptor::alloc()->init()->autorelease();
-    computeFunc->setLibrary(library);
-    computeFunc->setName(NS::String::string("objectCulling_main", NS::UTF8StringEncoding));
-
-    pipelineDescriptor->setComputeFunctionDescriptor(computeFunc);
+    pipelineDescriptor->setComputeFunctionDescriptor(
+        MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "objectCulling_main")
+    );
 
     MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);
     LOG_ERROR_IF(!compiler, "Failed to create MTL::Compiler");
@@ -62,8 +61,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
     m_pipelineState = compiler->newComputePipelineState(pipelineDescriptor, taskOptions, &error);
     LOG_ERROR_IF(!m_pipelineState, "Failed to create compute pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    MTL::Function* computeFunction = library->newFunction(NS::String::string("objectCulling_main", NS::UTF8StringEncoding));
-    LOG_ERROR_IF(!computeFunction, "Failed to create compute function for object culling");
+    MTL::Function* computeFunction = shaderLibrary.GetFunction("objectCulling_main");
 
     MTL::ArgumentEncoder* argumentEncoder = computeFunction->newArgumentEncoder(4);
     LOG_ERROR_IF(!argumentEncoder, "Failed to create argument encoder for object culling's ICB");
@@ -77,6 +75,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
     argumentEncoder->setArgumentBuffer(m_icbArgumentBuffer->GetNative(), 0);
     argumentEncoder->setIndirectCommandBuffer(m_indirectCB, 0);
     argumentEncoder->release();
+    compiler->release();
 
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("Object Culling pass argument table", NS::UTF8StringEncoding));
@@ -111,7 +110,7 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             builder.ReadBuffer(data.renderObjectsBufferHandle);
             builder.WriteBuffer(visibilitiesBufferHandle);
             builder.WriteBuffer(executionRangeBufferHandle);
-            //TODO: Add WriteBuffer for ICB
+            // TODO: Add WriteBuffer for ICB
 
             MTL::Buffer* indexBufferInfoBuffer = resources.GetBuffer(indexBufferInfoBufferHandle);
             m_argumentTable->setAddress(indexBufferInfoBuffer->gpuAddress(), 1);

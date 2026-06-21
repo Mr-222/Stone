@@ -8,6 +8,7 @@
 #include "Core/MetalContext.h"
 #include "Core/RenderGraph.h"
 #include "Utility/Logger.h"
+#include "Utility/ShaderLibrary.h"
 
 constexpr const char* kTriangleShaderLibrary = STONE_SHADER_DIR "/Triangle.metallib";
 
@@ -34,19 +35,15 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
 
     NS::Error* error = nullptr;
 
-    NS::String* libraryPath = NS::String::string(kTriangleShaderLibrary, NS::UTF8StringEncoding);
-    MTL::Library* library = device->newLibrary(libraryPath, &error);
-    LOG_ERROR_IF(!library, "Failed to load shader library {}: {}", kTriangleShaderLibrary, error ? error->localizedDescription()->utf8String() : "unknown error");
+    ShaderLibrary shaderLibrary = LoadShaderLibrary(device, kTriangleShaderLibrary, {
+        "vertex_main",
+        "fragment_main",
+    });
 
     MTL4::RenderPipelineDescriptor* pipelineDescriptor = MTL4::RenderPipelineDescriptor::alloc()->init()->autorelease();
 
-    MTL4::LibraryFunctionDescriptor* vertexFunc = MTL4::LibraryFunctionDescriptor::alloc()->init()->autorelease();
-    vertexFunc->setLibrary(library);
-    vertexFunc->setName(NS::String::string("vertex_main", NS::UTF8StringEncoding));
-
-    MTL4::LibraryFunctionDescriptor* fragmentFunc = MTL4::LibraryFunctionDescriptor::alloc()->init()->autorelease();
-    fragmentFunc->setLibrary(library);
-    fragmentFunc->setName(NS::String::string("fragment_main", NS::UTF8StringEncoding));
+    MTL4::LibraryFunctionDescriptor* vertexFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "vertex_main");
+    MTL4::LibraryFunctionDescriptor* fragmentFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "fragment_main");
 
     pipelineDescriptor->setVertexFunctionDescriptor(vertexFunc);
     pipelineDescriptor->setFragmentFunctionDescriptor(fragmentFunc);
@@ -59,8 +56,7 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     m_pipelineState = compiler->newRenderPipelineState(pipelineDescriptor, taskOptions, &error);
     LOG_ERROR_IF(!m_pipelineState, "Failed to create render pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    MTL::Function* vertexFunction = library->newFunction(NS::String::string("vertex_main", NS::UTF8StringEncoding));
-    LOG_ERROR_IF(!vertexFunction, "Failed to load vertex function for argument encoding");
+    MTL::Function* vertexFunction = shaderLibrary.GetFunction("vertex_main");
 
     MTL::ArgumentEncoder* argumentEncoder = vertexFunction->newArgumentEncoder(0);
     LOG_ERROR_IF(!argumentEncoder, "Failed to create argument encoder for triangle bindings");
@@ -103,8 +99,6 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     m_argumentTable->setAddress(m_argumentBuffer->GetGPUAddress(), 0);
 
     argumentEncoder->release();
-    vertexFunction->release();
-    library->release();
     compiler->release();
 }
 

@@ -14,11 +14,7 @@ RenderGraphResourceHandle RenderGraphResources::DeclareTexture(std::string name)
         return m_resourcesLUT[name];
     }
 
-    m_resources.push_back(RenderGraphResource{
-       .name = name,
-       .type = RenderGraphResourceType::Texture,
-       .texture = nullptr,
-    });
+    m_resources.push_back(RenderGraphResource(name, RenderGraphResourceType::Texture));
 
     RenderGraphResourceHandle handle { static_cast<uint32_t>(m_resources.size() - 1) };
     m_resourcesLUT[name] = handle;
@@ -54,11 +50,7 @@ RenderGraphResourceHandle RenderGraphResources::DeclareBuffer(std::string name) 
         return m_resourcesLUT[name];
     }
 
-    m_resources.push_back(RenderGraphResource{
-        .name = name,
-        .type = RenderGraphResourceType::Buffer,
-        .buffer = nullptr,
-    });
+    m_resources.push_back(RenderGraphResource(name, RenderGraphResourceType::Buffer));
 
     RenderGraphResourceHandle handle { static_cast<uint32_t>(m_resources.size() - 1) };
     m_resourcesLUT[name] = handle;
@@ -94,11 +86,7 @@ RenderGraphResourceHandle RenderGraphResources::DeclareIndirectCommandBuffer(std
         return m_resourcesLUT[name];
     }
 
-    m_resources.push_back(RenderGraphResource{
-        .name = name,
-        .type = RenderGraphResourceType::IndirectCommandBuffer,
-        .indirectCB = nullptr,
-    });
+    m_resources.push_back(RenderGraphResource(name, RenderGraphResourceType::IndirectCommandBuffer));
 
     RenderGraphResourceHandle handle { static_cast<uint32_t>(m_resources.size() - 1) };
     m_resourcesLUT[name] = handle;

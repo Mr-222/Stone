@@ -31,9 +31,14 @@ struct RenderGraphResourceHandle {
 struct RenderGraphResource {
     std::string name;
     RenderGraphResourceType type;
-    MTL::Texture* texture = nullptr;
-    MTL::Buffer* buffer = nullptr;
-    MTL::IndirectCommandBuffer* indirectCB = nullptr;
+    union {
+        MTL::Texture* texture;
+        MTL::Buffer* buffer;
+        MTL::IndirectCommandBuffer* indirectCB;
+    };
+
+    RenderGraphResource(std::string n, RenderGraphResourceType t)
+        : name(std::move(n)), type(t), texture(nullptr) {}
 };
 
 class RenderGraphResources {

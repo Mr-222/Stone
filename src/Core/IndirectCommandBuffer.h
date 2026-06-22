@@ -2,12 +2,10 @@
 
 #include <Metal/Metal.hpp>
 
-#include "Resource.h"
-
-class IndirectCommandBuffer : public Resource {
+class IndirectCommandBuffer {
 public:
     IndirectCommandBuffer(MTL::Device* device, MTL::IndirectCommandBufferDescriptor* descriptor, size_t maxCommandCount, MTL::ResourceOptions options);
-    ~IndirectCommandBuffer() override;
+    ~IndirectCommandBuffer();
 
     IndirectCommandBuffer(const IndirectCommandBuffer&) = delete;
     IndirectCommandBuffer& operator=(const IndirectCommandBuffer&) = delete;

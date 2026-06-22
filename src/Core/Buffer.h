@@ -4,9 +4,8 @@
 
 #include "CommandBufferPool.h"
 #include "Heap.h"
-#include "Resource.h"
 
-class Buffer : public Resource {
+class Buffer {
 public:
     Buffer(MTL::Device* device, size_t size, MTL::ResourceOptions options);
     Buffer(MTL::Device* device, const void* data, size_t size, MTL::ResourceOptions options);

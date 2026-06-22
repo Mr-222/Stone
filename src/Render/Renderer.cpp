@@ -63,6 +63,10 @@ void Renderer::Run() {
     glfwSetWindowUserPointer(m_window->GetGLFWWindow(), this);
     glfwSetInputMode(m_window->GetGLFWWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetCursorPosCallback(m_window->GetGLFWWindow(), [](GLFWwindow* window, double xpos, double ypos) {
+        if (glfwGetInputMode(window, GLFW_CURSOR) == GLFW_CURSOR_NORMAL) {
+            return;
+        }
+
         Renderer* renderer = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
 
         // Prevent the camera from abruptly jumping or spinning wildly the very first time
@@ -82,6 +86,12 @@ void Renderer::Run() {
         renderer->m_camera->ProcessMouseMovement(xoffset, yoffset);
     });
 
+    glfwSetMouseButtonCallback(m_window->GetGLFWWindow(), [](GLFWwindow* window, int button, int action, int mods) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        }
+    });
+
     float lastFrameTime = glfwGetTime();
 
     while (!m_window->ShouldClose()) {
@@ -92,14 +102,21 @@ void Renderer::Run() {
         lastFrameTime = currentFrameTime;
 
         GLFWwindow* glfwWindow = m_window->GetGLFWWindow();
-        if (glfwGetKey(glfwWindow, GLFW_KEY_W) == GLFW_PRESS)
-            m_camera->ProcessKeyboard(Movement::FORWARD, deltaTime);
-        if (glfwGetKey(glfwWindow, GLFW_KEY_S) == GLFW_PRESS)
-            m_camera->ProcessKeyboard(Movement::BACKWARD, deltaTime);
-        if (glfwGetKey(glfwWindow, GLFW_KEY_A) == GLFW_PRESS)
-            m_camera->ProcessKeyboard(Movement::LEFT, deltaTime);
-        if (glfwGetKey(glfwWindow, GLFW_KEY_D) == GLFW_PRESS)
-            m_camera->ProcessKeyboard(Movement::RIGHT, deltaTime);
+        if (glfwGetKey(glfwWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetInputMode(glfwWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            m_firstMouse = true;
+        }
+
+        if (glfwGetInputMode(glfwWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+            if (glfwGetKey(glfwWindow, GLFW_KEY_W) == GLFW_PRESS)
+                m_camera->ProcessKeyboard(Movement::FORWARD, deltaTime);
+            if (glfwGetKey(glfwWindow, GLFW_KEY_S) == GLFW_PRESS)
+                m_camera->ProcessKeyboard(Movement::BACKWARD, deltaTime);
+            if (glfwGetKey(glfwWindow, GLFW_KEY_A) == GLFW_PRESS)
+                m_camera->ProcessKeyboard(Movement::LEFT, deltaTime);
+            if (glfwGetKey(glfwWindow, GLFW_KEY_D) == GLFW_PRESS)
+                m_camera->ProcessKeyboard(Movement::RIGHT, deltaTime);
+        }
 
         m_metalContext->BeginFrame();
 

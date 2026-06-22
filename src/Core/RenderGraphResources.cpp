@@ -14,11 +14,7 @@ RenderGraphResourceHandle RenderGraphResources::DeclareTexture(std::string name)
         return m_resourcesLUT[name];
     }
 
-    m_resources.push_back(RenderGraphResource{
-       .name = name,
-       .type = RenderGraphResourceType::Texture,
-       .texture = nullptr,
-    });
+    m_resources.push_back(RenderGraphResource(name, RenderGraphResourceType::Texture));
 
     RenderGraphResourceHandle handle { static_cast<uint32_t>(m_resources.size() - 1) };
     m_resourcesLUT[name] = handle;
@@ -54,11 +50,7 @@ RenderGraphResourceHandle RenderGraphResources::DeclareBuffer(std::string name) 
         return m_resourcesLUT[name];
     }
 
-    m_resources.push_back(RenderGraphResource{
-        .name = name,
-        .type = RenderGraphResourceType::Buffer,
-        .buffer = nullptr,
-    });
+    m_resources.push_back(RenderGraphResource(name, RenderGraphResourceType::Buffer));
 
     RenderGraphResourceHandle handle { static_cast<uint32_t>(m_resources.size() - 1) };
     m_resourcesLUT[name] = handle;
@@ -84,6 +76,42 @@ RenderGraphResourceHandle RenderGraphResources::GetBufferHandle(const std::strin
     const auto it = m_resourcesLUT.find(name);
     LOG_ERROR_IF(it == m_resourcesLUT.end(), "Buffer '{}' does not exist.", name);
     assert(m_resources[it->second.index].type == RenderGraphResourceType::Buffer);
+    return it->second;
+}
+
+RenderGraphResourceHandle RenderGraphResources::DeclareIndirectCommandBuffer(std::string name) {
+    if (m_resourcesLUT.contains(name)) {
+        LOG_ERROR_IF(m_resources[m_resourcesLUT[name].index].type != RenderGraphResourceType::IndirectCommandBuffer,
+            "'{}' already declared and it's not an indirect command buffer.", name);
+        return m_resourcesLUT[name];
+    }
+
+    m_resources.push_back(RenderGraphResource(name, RenderGraphResourceType::IndirectCommandBuffer));
+
+    RenderGraphResourceHandle handle { static_cast<uint32_t>(m_resources.size() - 1) };
+    m_resourcesLUT[name] = handle;
+    return handle;
+}
+
+RenderGraphResourceHandle RenderGraphResources::RegisterIndirectCommandBuffer(std::string name, const IndirectCommandBuffer& indirectCB) {
+    MTL::IndirectCommandBuffer* nativeICB = indirectCB.GetNative();
+    LOG_ERROR_IF(!nativeICB, "Cannot register null indirect command buffer '{}' into render graph.", name);
+
+    RenderGraphResourceHandle handle = DeclareIndirectCommandBuffer(name);
+    m_resources[handle.index].indirectCB = nativeICB;
+
+    return handle;
+}
+
+MTL::IndirectCommandBuffer* RenderGraphResources::GetIndirectCommandBuffer(RenderGraphResourceHandle handle) const {
+    LOG_ERROR_IF(!IsIndirectCommandBufferHandleValid(handle), "Invalid render graph indirect command buffer handle {}.", handle.index);
+    return m_resources[handle.index].indirectCB;
+}
+
+RenderGraphResourceHandle RenderGraphResources::GetIndirectCommandBufferHandle(const std::string& name) const {
+    const auto it = m_resourcesLUT.find(name);
+    LOG_ERROR_IF(it == m_resourcesLUT.end(), "IndirectCommandBuffer '{}' does not exist.", name);
+    assert(m_resources[it->second.index].type == RenderGraphResourceType::IndirectCommandBuffer);
     return it->second;
 }
 
@@ -113,7 +141,20 @@ bool RenderGraphResources::IsBufferHandleDeclared(RenderGraphResourceHandle hand
            m_resources[handle.index].type == RenderGraphResourceType::Buffer;
 }
 
-const std::string& RenderGraphResources::GetTextureName(RenderGraphResourceHandle handle) const {
+bool RenderGraphResources::IsIndirectCommandBufferHandleValid(RenderGraphResourceHandle handle) const {
+    return handle.IsValid() &&
+           handle.index < m_resources.size() &&
+           m_resources[handle.index].indirectCB &&
+           m_resources[handle.index].type == RenderGraphResourceType::IndirectCommandBuffer;
+}
+
+bool RenderGraphResources::IsIndirectCommandBufferHandleDeclared(RenderGraphResourceHandle handle) const {
+    return handle.IsValid() &&
+           handle.index < m_resources.size() &&
+           m_resources[handle.index].type == RenderGraphResourceType::IndirectCommandBuffer;
+}
+
+const std::string& RenderGraphResources::GetName(RenderGraphResourceHandle handle) const {
     LOG_ERROR_IF(!IsTextureHandleDeclared(handle), "Invalid render graph texture handle {}.", handle.index);
     return m_resources[handle.index].name;
 }

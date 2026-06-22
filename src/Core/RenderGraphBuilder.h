@@ -45,6 +45,30 @@ public:
         });
     }
 
+    void WriteBuffer(RenderGraphResourceHandle buffer) {
+         m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = buffer,
+            .resourceType = RenderGraphResourceType::Buffer,
+            .accessType = RenderGraphResourceAccessType::Write,
+         });
+    }
+
+    void ReadIndirectCommandBuffer(RenderGraphResourceHandle indirectCB) {
+        m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = indirectCB,
+            .resourceType = RenderGraphResourceType::IndirectCommandBuffer,
+            .accessType = RenderGraphResourceAccessType::Read,
+        });
+    }
+
+    void WriteIndirectCommandBuffer(RenderGraphResourceHandle indirectCB) {
+         m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = indirectCB,
+            .resourceType = RenderGraphResourceType::IndirectCommandBuffer,
+            .accessType = RenderGraphResourceAccessType::Write,
+         });
+    }
+
     RenderGraphColorAttachment WriteColor(RenderGraphResourceHandle texture, const RenderGraphColorAttachmentDesc& desc) {
         m_resourceAccesses.push_back(RenderGraphResourceAccess{
             .resource = texture,

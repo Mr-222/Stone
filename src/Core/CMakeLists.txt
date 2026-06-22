@@ -4,11 +4,10 @@ add_library(Core STATIC
         Window.mm
         CommandBufferPool.cpp
         CommandBuffer.cpp
-        CommandBuffer.h
         Buffer.cpp
         Texture.cpp
-        Texture.h
         Heap.cpp
+        IndirectCommandBuffer.cpp
         RenderGraphBuilder.h
         RenderGraphResources.h
         RenderGraphResources.cpp

@@ -7,11 +7,12 @@
 #include "Core/Heap.h"
 #include "Core/MetalContext.h"
 #include "Core/RenderGraph.h"
+#include "Shader/ShaderTypes.h"
 #include "Utility/Logger.h"
+#include "Utility/ShaderLibrary.h"
 
 constexpr const char* kTriangleShaderLibrary = STONE_SHADER_DIR "/Triangle.metallib";
 
-namespace {
 struct TrianglePassData {
     RenderGraphColorAttachment colorAttachment;
     MTL::RenderPipelineState* pipelineState = nullptr;
@@ -20,7 +21,6 @@ struct TrianglePassData {
     MTL::Heap* sharedHeap = nullptr;
     RenderGraphResourceHandle frameUniformHandle;
 };
-}
 
 TrianglePass::TrianglePass() = default;
 
@@ -35,36 +35,31 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     MTL::Device* device = context.GetDevice();
 
     NS::Error* error = nullptr;
-    MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);
-    LOG_ERROR_IF(!compiler, "Failed to create MTL::Compiler");
 
-    NS::String* libraryPath = NS::String::string(kTriangleShaderLibrary, NS::UTF8StringEncoding);
-    MTL::Library* library = device->newLibrary(libraryPath, &error);
-    LOG_ERROR_IF(!library, "Failed to load shader library {}: {}", kTriangleShaderLibrary, error ? error->localizedDescription()->utf8String() : "unknown error");
+    ShaderLibrary shaderLibrary = LoadShaderLibrary(device, kTriangleShaderLibrary, {
+        "vertex_main",
+        "fragment_main",
+    });
 
     MTL4::RenderPipelineDescriptor* pipelineDescriptor = MTL4::RenderPipelineDescriptor::alloc()->init()->autorelease();
 
-    MTL4::LibraryFunctionDescriptor* vertexFunc = MTL4::LibraryFunctionDescriptor::alloc()->init()->autorelease();
-    vertexFunc->setLibrary(library);
-    vertexFunc->setName(NS::String::string("vertex_main", NS::UTF8StringEncoding));
-
-    MTL4::LibraryFunctionDescriptor* fragmentFunc = MTL4::LibraryFunctionDescriptor::alloc()->init()->autorelease();
-    fragmentFunc->setLibrary(library);
-    fragmentFunc->setName(NS::String::string("fragment_main", NS::UTF8StringEncoding));
+    MTL4::LibraryFunctionDescriptor* vertexFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "vertex_main");
+    MTL4::LibraryFunctionDescriptor* fragmentFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "fragment_main");
 
     pipelineDescriptor->setVertexFunctionDescriptor(vertexFunc);
     pipelineDescriptor->setFragmentFunctionDescriptor(fragmentFunc);
     pipelineDescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
     pipelineDescriptor->setInputPrimitiveTopology(MTL::PrimitiveTopologyClassTriangle);
 
+    MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);
+    LOG_ERROR_IF(!compiler, "Failed to create MTL::Compiler");
     MTL4::CompilerTaskOptions* taskOptions = MTL4::CompilerTaskOptions::alloc()->init()->autorelease();
     m_pipelineState = compiler->newRenderPipelineState(pipelineDescriptor, taskOptions, &error);
     LOG_ERROR_IF(!m_pipelineState, "Failed to create render pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    MTL::Function* vertexFunction = library->newFunction(NS::String::string("vertex_main", NS::UTF8StringEncoding));
-    LOG_ERROR_IF(!vertexFunction, "Failed to load vertex function for argument encoding");
+    MTL::Function* vertexFunction = shaderLibrary.GetFunction("vertex_main");
 
-    MTL::ArgumentEncoder* argumentEncoder = vertexFunction->newArgumentEncoder(0);
+    MTL::ArgumentEncoder* argumentEncoder = vertexFunction->newArgumentEncoder(static_cast<NS::UInteger>(TriangleBufferIndex::BindlessArguments));
     LOG_ERROR_IF(!argumentEncoder, "Failed to create argument encoder for triangle bindings");
 
     std::array<glm::vec4, 3> positions = {{
@@ -92,21 +87,19 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     m_argumentBuffer = std::make_unique<Buffer>(*m_sharedHeap, argumentEncoder->encodedLength(), MTL::ResourceStorageModeShared);
 
     argumentEncoder->setArgumentBuffer(m_argumentBuffer->GetNative(), 0);
-    argumentEncoder->setBuffer(m_positionBuffer->GetNative(), 0, 0);
-    argumentEncoder->setBuffer(m_colorBuffer->GetNative(), 0, 1);
+    argumentEncoder->setBuffer(m_positionBuffer->GetNative(), 0, static_cast<NS::UInteger>(TriangleBindlessArgumentID::Positions));
+    argumentEncoder->setBuffer(m_colorBuffer->GetNative(), 0, static_cast<NS::UInteger>(TriangleBindlessArgumentID::Colors));
 
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("Triangle Argument Table", NS::UTF8StringEncoding));
     argumentTableDescriptor->setInitializeBindings(true);
-    argumentTableDescriptor->setMaxBufferBindCount(2);
+    argumentTableDescriptor->setMaxBufferBindCount(static_cast<NS::UInteger>(TriangleBufferIndex::MaxBufferBindCount));
     m_argumentTable = device->newArgumentTable(argumentTableDescriptor, &error);
     LOG_ERROR_IF(!m_argumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    m_argumentTable->setAddress(m_argumentBuffer->GetGPUAddress(), 0);
+    m_argumentTable->setAddress(m_argumentBuffer->GetGPUAddress(), static_cast<NS::UInteger>(TriangleBufferIndex::BindlessArguments));
 
     argumentEncoder->release();
-    vertexFunction->release();
-    library->release();
     compiler->release();
 }
 
@@ -130,7 +123,7 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
             builder.ReadBuffer(frameUniformHandle);
 
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(frameUniformHandle);
-            data.argumentTable->setAddress(frameUniformBuffer->gpuAddress(), 1);
+            data.argumentTable->setAddress(frameUniformBuffer->gpuAddress(), static_cast<NS::UInteger>(TriangleBufferIndex::FrameUniform));
         },
         [](const TrianglePassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
@@ -150,8 +143,8 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
             colorAttachment->setClearColor(data.colorAttachment.desc.clearColor);
             colorAttachment->setStoreAction(data.colorAttachment.desc.storeAction);
 
-            MTL4::RenderCommandEncoder* commandEncoder = cmd.BeginRenderPass(passDescriptor);
-            LOG_ERROR_IF(!commandEncoder, "Failed to create render command encoder");
+            MTL4::RenderCommandEncoder* renderEncoder = cmd.BeginRenderPass(passDescriptor);
+            LOG_ERROR_IF(!renderEncoder, "Failed to create render command encoder");
 
             MTL::Viewport viewport {
                 0.0,
@@ -162,12 +155,12 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
                 1.0
             };
 
-            commandEncoder->setRenderPipelineState(data.pipelineState);
-            commandEncoder->setViewport(viewport);
-            commandEncoder->setCullMode(MTL::CullModeNone);
-            commandEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
-            commandEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex);
-            commandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, 0, 3);
-            commandEncoder->endEncoding();
+            renderEncoder->setRenderPipelineState(data.pipelineState);
+            renderEncoder->setViewport(viewport);
+            renderEncoder->setCullMode(MTL::CullModeNone);
+            renderEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+            renderEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex);
+            renderEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, 0, 3);
+            renderEncoder->endEncoding();
         });
 }

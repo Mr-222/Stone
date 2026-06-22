@@ -22,6 +22,14 @@ RenderGraphResourceHandle RenderGraph::RegisterBuffer(const std::string &name, c
     return m_resources.RegisterBuffer(name, buffer);
 }
 
+RenderGraphResourceHandle RenderGraph::DeclareIndirectCommandBuffer(const std::string& name) {
+    return m_resources.DeclareIndirectCommandBuffer(name);
+}
+
+RenderGraphResourceHandle RenderGraph::RegisterIndirectCommandBuffer(const std::string& name, const IndirectCommandBuffer& indirectCB) {
+    return m_resources.RegisterIndirectCommandBuffer(name, indirectCB);
+}
+
 void RenderGraph::Compile() {
     for (const auto& pass : m_passes) {
         for (const RenderGraphResourceAccess& access : pass->GetResourceAccesses()) {
@@ -36,6 +44,12 @@ void RenderGraph::Compile() {
                 LOG_ERROR_IF(
                     !m_resources.IsBufferHandleDeclared(access.resource),
                     "Render pass '{} declared an invalid buffer dependency.'",
+                    pass->GetName());
+                break;
+            case RenderGraphResourceType::IndirectCommandBuffer:
+                LOG_ERROR_IF(
+                    !m_resources.IsIndirectCommandBufferHandleDeclared(access.resource),
+                    "Render pass '{}' declared an invalid indirect command buffer dependency.",
                     pass->GetName());
                 break;
             }

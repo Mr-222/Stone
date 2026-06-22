@@ -16,7 +16,7 @@ public:
 
     void AddResource(const MTL::Allocation* allocation);
     MTL4::RenderCommandEncoder*   BeginRenderPass(MTL4::RenderPassDescriptor* desc);
-    MTL4::ComputeCommandEncoder*  BeginBlitPass();
+    MTL4::ComputeCommandEncoder*  BeginComputePass();
     void SubmitTo(MTL4::CommandQueue* submitQueue);
 
 private:

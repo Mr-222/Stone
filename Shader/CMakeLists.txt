@@ -58,9 +58,9 @@ foreach(SHADER_SOURCE IN LISTS METAL_SHADER_SOURCES)
 
     add_custom_command(
             OUTPUT "${METALLIB_OUTPUT}" "${AIR_OUTPUT}"
-            COMMAND "${METAL_EXECUTABLE}" -fmodules-cache-path="${STONE_SHADER_MODULE_CACHE_DIR}" -I "${CMAKE_CURRENT_SOURCE_DIR}" -c "${SHADER_SOURCE}" -o "${AIR_OUTPUT}"
+            COMMAND "${METAL_EXECUTABLE}" -fmodules-cache-path="${STONE_SHADER_MODULE_CACHE_DIR}" -c "${SHADER_SOURCE}" -o "${AIR_OUTPUT}"
             COMMAND "${METALLIB_EXECUTABLE}" "${AIR_OUTPUT}" -o "${METALLIB_OUTPUT}"
-            DEPENDS "${SHADER_SOURCE}" "${CMAKE_CURRENT_SOURCE_DIR}/ShaderTypes.h"
+            DEPENDS "${SHADER_SOURCE}"
             COMMENT "Compiling Metal shader ${SHADER_NAME}.metal"
             VERBATIM
     )

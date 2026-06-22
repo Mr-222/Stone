@@ -1,15 +1,17 @@
 #include "Renderer.h"
 
 #include <memory>
+#include <GLFW/glfw3.h>
 
 #include "Core/CommandBufferPool.h"
 #include "Core/MetalContext.h"
 #include "Core/Texture.h"
 #include "Core/Window.h"
 #include "Core/RenderGraph.h"
-#include "Camera.h"
-#include "TrianglePass.h"
-#include <GLFW/glfw3.h>
+#include "Render/Camera.h"
+#include "Render/TrianglePass.h"
+#include "Render/ObjectCullingPass.h"
+#include "Render/Scene.h"
 
 struct FrameUniform {
     glm::mat4 viewProjection;
@@ -22,6 +24,8 @@ Renderer::Renderer() {
 }
 
 void Renderer::Setup() {
+    NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+
     m_window = std::make_unique<Window>(1600, 900);
     m_metalContext = std::make_shared<MetalContext>(m_window->GetCAMetalLayer());
     m_commandBufferPool = std::make_shared<CommandBufferPool>(64, *m_metalContext);
@@ -41,17 +45,32 @@ void Renderer::Setup() {
                         MTL::ResourceStorageModeShared);
     m_renderGraph->RegisterBuffer("frameUniform", *m_frameUniform);
 
+    m_scene = std::make_unique<Scene>();
+    m_scene->LoadGltf("./Models/FlightHelmet/glTF/FlightHelmet.gltf");
+    m_scene->CommitToGPU(m_metalContext->GetDevice());
+    m_scene->RegisterBuffers(*m_renderGraph);
+
     m_trianglePass = std::make_unique<TrianglePass>();
     m_trianglePass->Setup(*m_metalContext, *m_commandBufferPool);
     m_trianglePass->AddToGraph(*m_renderGraph);
 
+    m_objectCullingPass = std::make_unique<ObjectCullingPass>();
+    m_objectCullingPass->Setup(*m_metalContext, m_scene->objects.size());
+    m_objectCullingPass->AddToGraph(*m_renderGraph);
+
     m_renderGraph->Compile();
+
+    pool->release();
 }
 
 void Renderer::Run() {
     glfwSetWindowUserPointer(m_window->GetGLFWWindow(), this);
     glfwSetInputMode(m_window->GetGLFWWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetCursorPosCallback(m_window->GetGLFWWindow(), [](GLFWwindow* window, double xpos, double ypos) {
+        if (glfwGetInputMode(window, GLFW_CURSOR) == GLFW_CURSOR_NORMAL) {
+            return;
+        }
+
         Renderer* renderer = static_cast<Renderer*>(glfwGetWindowUserPointer(window));
 
         // Prevent the camera from abruptly jumping or spinning wildly the very first time
@@ -71,9 +90,17 @@ void Renderer::Run() {
         renderer->m_camera->ProcessMouseMovement(xoffset, yoffset);
     });
 
+    glfwSetMouseButtonCallback(m_window->GetGLFWWindow(), [](GLFWwindow* window, int button, int action, int mods) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        }
+    });
+
     float lastFrameTime = glfwGetTime();
 
     while (!m_window->ShouldClose()) {
+        NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+
         m_window->PollEvents();
 
         float currentFrameTime = glfwGetTime();
@@ -81,14 +108,21 @@ void Renderer::Run() {
         lastFrameTime = currentFrameTime;
 
         GLFWwindow* glfwWindow = m_window->GetGLFWWindow();
-        if (glfwGetKey(glfwWindow, GLFW_KEY_W) == GLFW_PRESS)
-            m_camera->ProcessKeyboard(Movement::FORWARD, deltaTime);
-        if (glfwGetKey(glfwWindow, GLFW_KEY_S) == GLFW_PRESS)
-            m_camera->ProcessKeyboard(Movement::BACKWARD, deltaTime);
-        if (glfwGetKey(glfwWindow, GLFW_KEY_A) == GLFW_PRESS)
-            m_camera->ProcessKeyboard(Movement::LEFT, deltaTime);
-        if (glfwGetKey(glfwWindow, GLFW_KEY_D) == GLFW_PRESS)
-            m_camera->ProcessKeyboard(Movement::RIGHT, deltaTime);
+        if (glfwGetKey(glfwWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetInputMode(glfwWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            m_firstMouse = true;
+        }
+
+        if (glfwGetInputMode(glfwWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+            if (glfwGetKey(glfwWindow, GLFW_KEY_W) == GLFW_PRESS)
+                m_camera->ProcessKeyboard(Movement::FORWARD, deltaTime);
+            if (glfwGetKey(glfwWindow, GLFW_KEY_S) == GLFW_PRESS)
+                m_camera->ProcessKeyboard(Movement::BACKWARD, deltaTime);
+            if (glfwGetKey(glfwWindow, GLFW_KEY_A) == GLFW_PRESS)
+                m_camera->ProcessKeyboard(Movement::LEFT, deltaTime);
+            if (glfwGetKey(glfwWindow, GLFW_KEY_D) == GLFW_PRESS)
+                m_camera->ProcessKeyboard(Movement::RIGHT, deltaTime);
+        }
 
         m_metalContext->BeginFrame();
 
@@ -103,6 +137,8 @@ void Renderer::Run() {
         DoRender();
 
         m_metalContext->EndFrame();
+
+        pool->release();
     }
 }
 

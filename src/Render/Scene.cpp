@@ -7,6 +7,15 @@
 #include "Utility/Logger.h"
 #include "GeometryGenerator.h"
 
+struct RenderObjectGPUEntry {
+    uint32_t baseVertexOffset;
+    uint32_t firstIndex;
+    uint32_t indexCount;
+    // TODO: Add properties for compute shader culling (CellBound, MaterialID, etc.)
+    uint32_t pad0;
+    glm::mat4 transform;
+};
+
 glm::mat4 ToGlm(const fastgltf::math::fmat4x4& matrix) {
     glm::mat4 result(1.f);
     for (std::size_t column = 0; column < 4; ++column) {
@@ -173,29 +182,57 @@ void Scene::LoadGltf(std::filesystem::path path) {
 void Scene::CommitToGPU(MTL::Device* device) {
     LOG_ERROR_IF(!device, "Failed to commit scene to GPU: device is null");
 
-    const bool hasVertices = !globalVertices.empty();
-    LOG_WARN_IF(!hasVertices, "Scene has no vertices to commit");
-    if (hasVertices) {
-        vertexBuffer = std::make_unique<Buffer>(
-            device,
-            globalVertices.data(),
-            globalVertices.size() * sizeof(Vertex),
-            MTL::ResourceStorageModeShared);
-    }
-    else {
-        vertexBuffer.reset();
-    }
+    LOG_WARN_IF(globalVertices.empty(), "Scene has no vertices to commit");
+    m_vertexBuffer = std::make_unique<Buffer>(
+        device,
+        globalVertices.data(),
+        globalVertices.size() * sizeof(Vertex),
+        MTL::ResourceStorageModeShared);
+    m_vertexBuffer->GetNative()->setLabel(NS::String::string("Global Vertex Buffer", NS::UTF8StringEncoding));
 
-    const bool hasIndices = !globalIndices.empty();
-    LOG_WARN_IF(!hasIndices, "Scene has no indices to commit");
-    if (hasIndices) {
-        indexBuffer = std::make_unique<Buffer>(
-            device,
-            globalIndices.data(),
-            globalIndices.size() * sizeof(uint32_t),
-            MTL::ResourceStorageModeShared);
+    LOG_WARN_IF(globalIndices.empty(), "Scene has no indices to commit");
+    m_indexBuffer = std::make_unique<Buffer>(
+        device,
+        globalIndices.data(),
+        globalIndices.size() * sizeof(uint32_t),
+        MTL::ResourceStorageModeShared);
+    m_indexBuffer->GetNative()->setLabel(NS::String::string("Global Index Buffer", NS::UTF8StringEncoding));
+
+    const uint64_t indexBufferAddress = m_indexBuffer->GetGPUAddress();
+    m_indexBufferInfoBuffer = std::make_unique<Buffer>(
+        device,
+        &indexBufferAddress,
+        sizeof(indexBufferAddress),
+        MTL::ResourceStorageModeShared
+    );
+    m_indexBufferInfoBuffer->GetNative()->setLabel(NS::String::string("Index Buffer Info Buffer", NS::UTF8StringEncoding));
+
+    std::vector<RenderObjectGPUEntry> roEntries{};
+    roEntries.reserve(objects.size());
+    for (const RenderObject& renderObj : objects) {
+        RenderObjectGPUEntry entry{};
+
+        entry.transform = renderObj.transform;
+        entry.baseVertexOffset = submeshes[renderObj.firstSubmesh].vertexOffset;
+        entry.firstIndex = submeshes[renderObj.firstSubmesh].firstIndex;
+
+        entry.indexCount = 0;
+        for (int i = 0; i < renderObj.submeshCount; ++i)
+            entry.indexCount += submeshes[renderObj.firstSubmesh + i].indexCount;
+
+        roEntries.push_back(entry);
     }
-    else {
-        indexBuffer.reset();
-    }
+    m_renderObjBuffer = std::make_unique<Buffer>(
+        device,
+        roEntries.data(),
+        roEntries.size() * sizeof(RenderObjectGPUEntry),
+        MTL::ResourceStorageModeShared);
+    m_renderObjBuffer->GetNative()->setLabel(NS::String::string("Render Object Buffer", NS::UTF8StringEncoding));
+}
+
+void Scene::RegisterBuffers(RenderGraph &graph) {
+    graph.RegisterBuffer("GlobalVertexBuffer", *m_vertexBuffer);
+    graph.RegisterBuffer("GlobalIndexBuffer", *m_indexBuffer);
+    graph.RegisterBuffer("IndexBufferInfoBuffer", *m_indexBufferInfoBuffer);
+    graph.RegisterBuffer("RenderObjectBuffer", *m_renderObjBuffer);
 }

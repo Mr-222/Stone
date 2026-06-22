@@ -1,13 +1,12 @@
 #include "Heap.h"
 
 Heap::Heap(MTL::Device* device, size_t size, MTL::StorageMode mode) {
-    MTL::HeapDescriptor* heapDesc = MTL::HeapDescriptor::alloc()->init();
+    MTL::HeapDescriptor* heapDesc = MTL::HeapDescriptor::alloc()->init()->autorelease();
     heapDesc->setSize(size);
     heapDesc->setStorageMode(mode);
     heapDesc->setType(MTL::HeapTypeAutomatic);
 
     m_heap = device->newHeap(heapDesc);
-    heapDesc->release();
 }
 
 Heap::~Heap() {

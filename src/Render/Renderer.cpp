@@ -53,7 +53,7 @@ void Renderer::Setup() {
     m_trianglePass->AddToGraph(*m_renderGraph);
 
     m_objectCullingPass = std::make_unique<ObjectCullingPass>();
-    m_objectCullingPass->Setup(*m_metalContext, m_scene->m_objects.size());
+    m_objectCullingPass->Setup(*m_metalContext, m_scene->objects.size());
     m_objectCullingPass->AddToGraph(*m_renderGraph);
 
     m_renderGraph->Compile();

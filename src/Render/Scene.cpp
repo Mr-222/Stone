@@ -115,16 +115,16 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
 }
 
 Scene::MeshRange Scene::MergeMesh(Mesh&& mesh) {
-    const auto vertexOffset = static_cast<uint32_t>(m_globalVertices.size());
-    const auto indexOffset = static_cast<uint32_t>(m_globalIndices.size());
-    const auto firstSubmesh = static_cast<uint32_t>(m_submeshes.size());
+    const auto vertexOffset = static_cast<uint32_t>(globalVertices.size());
+    const auto indexOffset = static_cast<uint32_t>(globalIndices.size());
+    const auto firstSubmesh = static_cast<uint32_t>(submeshes.size());
     const auto submeshCount = static_cast<uint32_t>(mesh.submeshes.size());
 
-    m_globalVertices.insert(m_globalVertices.end(), mesh.vertices->begin(), mesh.vertices->end());
-    m_globalIndices.insert(m_globalIndices.end(), mesh.indices->begin(), mesh.indices->end());
+    globalVertices.insert(globalVertices.end(), mesh.vertices->begin(), mesh.vertices->end());
+    globalIndices.insert(globalIndices.end(), mesh.indices->begin(), mesh.indices->end());
 
     for (const auto& submesh : mesh.submeshes) {
-        m_submeshes.push_back(SubMesh{
+        submeshes.push_back(SubMesh{
             indexOffset + submesh.firstIndex,
             submesh.indexCount,
             vertexOffset + submesh.vertexOffset,
@@ -171,7 +171,7 @@ void Scene::LoadGltf(std::filesystem::path path) {
         LOG_ERROR_IF(invalidMeshIndex, "Mesh index {} exceeds mesh range", node.meshIndex.value());
 
         const auto& meshRange = meshRanges[node.meshIndex.value()];
-        m_objects.push_back(RenderObject{
+        objects.push_back(RenderObject{
             meshRange.firstSubmesh,
             meshRange.submeshCount,
             ToGlm(transform),
@@ -182,19 +182,21 @@ void Scene::LoadGltf(std::filesystem::path path) {
 void Scene::CommitToGPU(MTL::Device* device) {
     LOG_ERROR_IF(!device, "Failed to commit scene to GPU: device is null");
 
-    LOG_WARN_IF(m_globalVertices.empty(), "Scene has no vertices to commit");
+    LOG_WARN_IF(globalVertices.empty(), "Scene has no vertices to commit");
     m_vertexBuffer = std::make_unique<Buffer>(
         device,
-        m_globalVertices.data(),
-        m_globalVertices.size() * sizeof(Vertex),
+        globalVertices.data(),
+        globalVertices.size() * sizeof(Vertex),
         MTL::ResourceStorageModeShared);
+    m_vertexBuffer->GetNative()->setLabel(NS::String::string("Global Vertex Buffer", NS::UTF8StringEncoding));
 
-    LOG_WARN_IF(m_globalIndices.empty(), "Scene has no indices to commit");
+    LOG_WARN_IF(globalIndices.empty(), "Scene has no indices to commit");
     m_indexBuffer = std::make_unique<Buffer>(
         device,
-        m_globalIndices.data(),
-        m_globalIndices.size() * sizeof(uint32_t),
+        globalIndices.data(),
+        globalIndices.size() * sizeof(uint32_t),
         MTL::ResourceStorageModeShared);
+    m_indexBuffer->GetNative()->setLabel(NS::String::string("Global Index Buffer", NS::UTF8StringEncoding));
 
     const uint64_t indexBufferAddress = m_indexBuffer->GetGPUAddress();
     m_indexBufferInfoBuffer = std::make_unique<Buffer>(
@@ -203,19 +205,20 @@ void Scene::CommitToGPU(MTL::Device* device) {
         sizeof(indexBufferAddress),
         MTL::ResourceStorageModeShared
     );
+    m_indexBufferInfoBuffer->GetNative()->setLabel(NS::String::string("Index Buffer Info Buffer", NS::UTF8StringEncoding));
 
     std::vector<RenderObjectGPUEntry> roEntries{};
-    roEntries.reserve(m_objects.size());
-    for (const RenderObject& renderObj : m_objects) {
+    roEntries.reserve(objects.size());
+    for (const RenderObject& renderObj : objects) {
         RenderObjectGPUEntry entry{};
 
         entry.transform = renderObj.transform;
-        entry.baseVertexOffset = m_submeshes[renderObj.firstSubmesh].vertexOffset;
-        entry.firstIndex = m_submeshes[renderObj.firstSubmesh].firstIndex;
+        entry.baseVertexOffset = submeshes[renderObj.firstSubmesh].vertexOffset;
+        entry.firstIndex = submeshes[renderObj.firstSubmesh].firstIndex;
 
         entry.indexCount = 0;
         for (int i = 0; i < renderObj.submeshCount; ++i)
-            entry.indexCount += m_submeshes[renderObj.firstSubmesh + i].indexCount;
+            entry.indexCount += submeshes[renderObj.firstSubmesh + i].indexCount;
 
         roEntries.push_back(entry);
     }
@@ -224,6 +227,7 @@ void Scene::CommitToGPU(MTL::Device* device) {
         roEntries.data(),
         roEntries.size() * sizeof(RenderObjectGPUEntry),
         MTL::ResourceStorageModeShared);
+    m_renderObjBuffer->GetNative()->setLabel(NS::String::string("Render Object Buffer", NS::UTF8StringEncoding));
 }
 
 void Scene::RegisterBuffers(RenderGraph &graph) {

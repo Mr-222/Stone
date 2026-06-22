@@ -40,7 +40,7 @@ void Buffer::UploadFrom(const Buffer& src, CommandBuffer& cmd) const {
     AddBufferResidency(cmd, src.GetNative());
     AddBufferResidency(cmd, m_buffer);
 
-    MTL4::ComputeCommandEncoder* encoder = cmd.BeginBlitPass();
+    MTL4::ComputeCommandEncoder* encoder = cmd.BeginComputePass();
     encoder->copyFromBuffer(src.GetNative(), 0, m_buffer, 0, m_size);
     encoder->endEncoding();
 }
@@ -50,7 +50,7 @@ void Buffer::UploadFromFlush(const Buffer& src, CommandBufferPool& pool, MTL4::C
     AddBufferResidency(temp, src.GetNative());
     AddBufferResidency(temp, m_buffer);
 
-    MTL4::ComputeCommandEncoder* encoder = temp.BeginBlitPass();
+    MTL4::ComputeCommandEncoder* encoder = temp.BeginComputePass();
     encoder->copyFromBuffer(src.GetNative(), 0, m_buffer, 0, m_size);
     encoder->endEncoding();
     temp.SubmitTo(queue);
@@ -80,7 +80,7 @@ void Buffer::UpdateStaged(const void *data, size_t size, size_t offset, CommandB
     AddBufferResidency(temp, m_buffer);
 
     // 3. Issue the copy command
-    MTL4::ComputeCommandEncoder* encoder = temp.BeginBlitPass();
+    MTL4::ComputeCommandEncoder* encoder = temp.BeginComputePass();
     encoder->copyFromBuffer(stagingBuffer.GetNative(), 0, m_buffer, offset, size);
 
     temp.SubmitTo(queue);

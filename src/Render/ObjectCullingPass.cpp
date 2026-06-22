@@ -154,6 +154,5 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             MTL::Size threadGroupSize = MTL::Size(width, 1, 1);
             computeEncoder->dispatchThreads(gridSize, threadGroupSize);
             computeEncoder->endEncoding();
-            computeEncoder->release();
         });
 }

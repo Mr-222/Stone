@@ -17,9 +17,8 @@ CommandBuffer::CommandBuffer(MTL4::CommandBuffer* cmd,
     , m_allocator(allocator)
     , m_pool(pool)
 {
-    MTL::ResidencySetDescriptor* rsDesc = MTL::ResidencySetDescriptor::alloc()->init();
+    MTL::ResidencySetDescriptor* rsDesc = MTL::ResidencySetDescriptor::alloc()->init()->autorelease();
     MTL::ResidencySet* set = device->newResidencySet(rsDesc, nullptr);
-    rsDesc->release();
 
     LOG_ERROR_IF(!set, "Failed to create residency set for command buffer.");
 
@@ -58,14 +57,6 @@ MTL4::RenderCommandEncoder* CommandBuffer::BeginRenderPass(MTL4::RenderPassDescr
     return m_commandBuffer->renderCommandEncoder(desc);
 }
 
-MTL4::ComputeCommandEncoder* CommandBuffer::BeginBlitPass() {
-    if (!m_hasBegun) {
-        m_hasBegun = true;
-        m_commandBuffer->beginCommandBuffer(m_allocator);
-    }
-    return m_commandBuffer->computeCommandEncoder();
-}
-
 MTL4::ComputeCommandEncoder* CommandBuffer::BeginComputePass() {
     if (!m_hasBegun) {
         m_hasBegun = true;
@@ -88,7 +79,7 @@ void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
     if (m_flushGPU) {
         std::binary_semaphore gpuDone{0};
 
-        MTL4::CommitOptions* options = MTL4::CommitOptions::alloc()->init();
+        MTL4::CommitOptions* options = MTL4::CommitOptions::alloc()->init()->autorelease();
 
         auto feedbackBlock = [&gpuDone](MTL4::CommitFeedback*) {
             gpuDone.release(); // Unblock thread
@@ -97,7 +88,6 @@ void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
         options->addFeedbackHandler(feedbackBlock);
 
         submitQueue->commit(bufferToSubmit, 1, options);
-        options->release();
 
         // Halt thread here until the queue fires the feedback block
         gpuDone.acquire();

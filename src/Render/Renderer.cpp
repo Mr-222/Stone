@@ -24,6 +24,8 @@ Renderer::Renderer() {
 }
 
 void Renderer::Setup() {
+    NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+
     m_window = std::make_unique<Window>(1600, 900);
     m_metalContext = std::make_shared<MetalContext>(m_window->GetCAMetalLayer());
     m_commandBufferPool = std::make_shared<CommandBufferPool>(64, *m_metalContext);
@@ -57,6 +59,8 @@ void Renderer::Setup() {
     m_objectCullingPass->AddToGraph(*m_renderGraph);
 
     m_renderGraph->Compile();
+
+    pool->release();
 }
 
 void Renderer::Run() {
@@ -95,6 +99,8 @@ void Renderer::Run() {
     float lastFrameTime = glfwGetTime();
 
     while (!m_window->ShouldClose()) {
+        NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+
         m_window->PollEvents();
 
         float currentFrameTime = glfwGetTime();
@@ -131,6 +137,8 @@ void Renderer::Run() {
         DoRender();
 
         m_metalContext->EndFrame();
+
+        pool->release();
     }
 }
 

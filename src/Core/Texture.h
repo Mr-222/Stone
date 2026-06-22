@@ -3,8 +3,9 @@
 #include <Metal/Metal.hpp>
 
 #include "Heap.h"
+#include "Resource.h"
 
-class Texture {
+class Texture : public Resource {
 public:
     static Texture Borrowed(MTL::Texture* texture);
 

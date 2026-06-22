@@ -10,12 +10,14 @@
 
 #include "Texture.h"
 #include "Buffer.h"
+#include "IndirectCommandBuffer.h"
 
 constexpr std::string kSwapchainImageName = "swapchain_image";
 
 enum class RenderGraphResourceType {
     Texture,
     Buffer,
+    IndirectCommandBuffer,
 };
 
 struct RenderGraphResourceHandle {
@@ -31,6 +33,7 @@ struct RenderGraphResource {
     RenderGraphResourceType type;
     MTL::Texture* texture = nullptr;
     MTL::Buffer* buffer = nullptr;
+    MTL::IndirectCommandBuffer* indirectCB = nullptr;
 };
 
 class RenderGraphResources {
@@ -47,11 +50,19 @@ public:
     MTL::Buffer* GetBuffer(RenderGraphResourceHandle handle) const;
     RenderGraphResourceHandle GetBufferHandle(const std::string& name) const;
 
+    RenderGraphResourceHandle DeclareIndirectCommandBuffer(std::string name);
+    RenderGraphResourceHandle RegisterIndirectCommandBuffer(std::string name, const IndirectCommandBuffer& indirectCB);
+    MTL::IndirectCommandBuffer* GetIndirectCommandBuffer(RenderGraphResourceHandle handle) const;
+    RenderGraphResourceHandle GetIndirectCommandBufferHandle(const std::string& name) const;
+
     bool IsTextureHandleValid(RenderGraphResourceHandle handle) const;
     bool IsTextureHandleDeclared(RenderGraphResourceHandle handle) const;
     bool IsBufferHandleValid(RenderGraphResourceHandle handle) const;
     bool IsBufferHandleDeclared(RenderGraphResourceHandle handle) const;
-    const std::string& GetTextureName(RenderGraphResourceHandle handle) const;
+    bool IsIndirectCommandBufferHandleValid(RenderGraphResourceHandle handle) const;
+    bool IsIndirectCommandBufferHandleDeclared(RenderGraphResourceHandle handle) const;
+
+    const std::string& GetName(RenderGraphResourceHandle handle) const;
 
 private:
     std::vector<RenderGraphResource> m_resources;

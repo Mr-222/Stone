@@ -11,6 +11,7 @@ class CommandBufferPool;
 class Heap;
 class MetalContext;
 class RenderGraph;
+class IndirectCommandBuffer;
 
 class ObjectCullingPass {
 public:
@@ -23,7 +24,7 @@ public:
 private:
     MTL::ComputePipelineState* m_pipelineState = nullptr;
     MTL4::ArgumentTable* m_argumentTable = nullptr;
-    MTL::IndirectCommandBuffer* m_indirectCB;
+    std::unique_ptr<IndirectCommandBuffer> m_indirectCB;
 
     std::unique_ptr<Buffer> m_visibilityBuffer;
     std::unique_ptr<Buffer> m_ICBExecutionRangeBuffer;

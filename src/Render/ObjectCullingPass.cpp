@@ -1,6 +1,7 @@
 #include "ObjectCullingPass.h"
 
 #include "Core/Buffer.h"
+#include "Core/IndirectCommandBuffer.h"
 #include "Core/RenderGraph.h"
 #include "Shader/ShaderTypes.h"
 #include "Utility/Logger.h"
@@ -12,6 +13,7 @@ struct ObjectCullingPassData {
     RenderGraphResourceHandle globalIndexBufferHandle;
     RenderGraphResourceHandle indexBufferInfoBufferHandle;
     RenderGraphResourceHandle renderObjectsBufferHandle;
+    RenderGraphResourceHandle indirectCBHandle;
 };
 
 ObjectCullingPass::ObjectCullingPass() = default;
@@ -41,8 +43,8 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
     icbDescriptor->setCommandTypes(MTL::IndirectCommandTypeDrawIndexed);
     icbDescriptor->setInheritBuffers(true);
     icbDescriptor->setInheritPipelineState(true);
-    m_indirectCB = device->newIndirectCommandBuffer(icbDescriptor, m_numObjects, MTL::ResourceStorageModePrivate);
-    m_indirectCB->setLabel(NS::String::string("Scene ICB", NS::UTF8StringEncoding));
+    m_indirectCB = std::make_unique<IndirectCommandBuffer>(device, icbDescriptor, m_numObjects, MTL::ResourceStorageModePrivate);
+    m_indirectCB->GetNative()->setLabel(NS::String::string("Scene ICB", NS::UTF8StringEncoding));
 
     NS::Error* error = nullptr;
 
@@ -74,7 +76,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
     m_icbArgumentBuffer->GetNative()->setLabel(NS::String::string("ICB Argument Buffer", NS::UTF8StringEncoding));
 
     argumentEncoder->setArgumentBuffer(m_icbArgumentBuffer->GetNative(), 0);
-    argumentEncoder->setIndirectCommandBuffer(m_indirectCB, 0);
+    argumentEncoder->setIndirectCommandBuffer(m_indirectCB->GetNative(), 0);
     argumentEncoder->release();
     compiler->release();
 
@@ -93,8 +95,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
 void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle visibilitiesBufferHandle = graph.RegisterBuffer("VisibilityBuffer", *m_visibilityBuffer);
     RenderGraphResourceHandle executionRangeBufferHandle  = graph.RegisterBuffer("ExecutionRangeBuffer", *m_ICBExecutionRangeBuffer);
-    // TODO: Add indirectCB in rendergraph infrastructure
-    //RenderGraphResourceHandle indirectCBHandle = graph.RegisterBuffer("IndirectCB", m_indirectCB);
+    RenderGraphResourceHandle indirectCBHandle = graph.RegisterIndirectCommandBuffer("IndirectCommandBuffer", *m_indirectCB);
     RenderGraphResourceHandle globalIndexBufferHandle = graph.DeclareBuffer("GlobalIndexBuffer");
     RenderGraphResourceHandle indexBufferInfoBufferHandle = graph.DeclareBuffer("IndexBufferInfoBuffer");
     RenderGraphResourceHandle renderObjectsBufferHandle = graph.DeclareBuffer("RenderObjectBuffer");
@@ -105,13 +106,14 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             data.globalIndexBufferHandle = globalIndexBufferHandle;
             data.indexBufferInfoBufferHandle = indexBufferInfoBufferHandle;
             data.renderObjectsBufferHandle = renderObjectsBufferHandle;
+            data.indirectCBHandle = indirectCBHandle;
 
             builder.ReadBuffer(data.globalIndexBufferHandle);
             builder.ReadBuffer(data.indexBufferInfoBufferHandle);
             builder.ReadBuffer(data.renderObjectsBufferHandle);
             builder.WriteBuffer(visibilitiesBufferHandle);
             builder.WriteBuffer(executionRangeBufferHandle);
-            // TODO: Add WriteBuffer for ICB
+            builder.WriteIndirectCommandBuffer(data.indirectCBHandle);
 
             MTL::Buffer* indexBufferInfoBuffer = resources.GetBuffer(indexBufferInfoBufferHandle);
             m_argumentTable->setAddress(indexBufferInfoBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::IndexBufferInfo));
@@ -126,13 +128,15 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!indexBufferInfoBuffer, "Failed to get index buffer info");
             MTL::Buffer* renderObjectsBuffer = resources.GetBuffer(data.renderObjectsBufferHandle);
             LOG_ERROR_IF(!renderObjectsBuffer, "Failed to get render objects buffer");
+            MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
+            LOG_ERROR_IF(!indirectCB, "Failed to get indirect command buffer");
 
             cmd.AddResource(globalIndexBuffer);
             cmd.AddResource(indexBufferInfoBuffer);
             cmd.AddResource(renderObjectsBuffer);
             cmd.AddResource(m_ICBExecutionRangeBuffer->GetNative());
             cmd.AddResource(m_visibilityBuffer->GetNative());
-            cmd.AddResource(m_indirectCB);
+            cmd.AddResource(indirectCB);
             cmd.AddResource(m_icbArgumentBuffer->GetNative());
 
             MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
@@ -141,7 +145,7 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             // Reset ICB
             memset(m_visibilityBuffer->GetNative()->contents(), 0, m_visibilityBuffer->GetSize());
             memset(m_ICBExecutionRangeBuffer->GetNative()->contents(), 0, m_ICBExecutionRangeBuffer->GetSize());
-            computeEncoder->resetCommandsInBuffer(m_indirectCB, NS::Range(0, m_numObjects));
+            computeEncoder->resetCommandsInBuffer(indirectCB, NS::Range(0, m_numObjects));
 
             computeEncoder->setComputePipelineState(m_pipelineState);
             computeEncoder->setArgumentTable(m_argumentTable);

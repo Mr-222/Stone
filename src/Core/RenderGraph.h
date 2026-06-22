@@ -23,7 +23,10 @@ public:
     RenderGraphResourceHandle RegisterTexture(const std::string& name, const Texture& texture);
 
     RenderGraphResourceHandle DeclareBuffer(const std::string& name);
-    RenderGraphResourceHandle RegisterBuffer(const std::string& nsme, const Buffer& buffer);
+    RenderGraphResourceHandle RegisterBuffer(const std::string& name, const Buffer& buffer);
+
+    RenderGraphResourceHandle DeclareIndirectCommandBuffer(const std::string& name);
+    RenderGraphResourceHandle RegisterIndirectCommandBuffer(const std::string& name, const IndirectCommandBuffer& indirectCB);
 
     template<typename PassData>
     void AddPass(

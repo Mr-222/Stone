@@ -96,5 +96,7 @@ void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
         submitQueue->commit(bufferToSubmit, 1);
     }
 
+    m_residencySet->removeAllAllocations();
+
     m_hasBegun = false;
 }

@@ -50,13 +50,8 @@ void Renderer::Setup() {
     m_scene->CommitToGPU(m_metalContext->GetDevice());
     m_scene->RegisterBuffers(*m_renderGraph);
 
-    m_trianglePass = std::make_unique<TrianglePass>();
-    m_trianglePass->Setup(*m_metalContext, *m_commandBufferPool);
-    m_trianglePass->AddToGraph(*m_renderGraph);
-
-    m_objectCullingPass = std::make_unique<ObjectCullingPass>();
-    m_objectCullingPass->Setup(*m_metalContext, m_scene->objects.size());
-    m_objectCullingPass->AddToGraph(*m_renderGraph);
+    m_renderGraph->AddPassNode<TrianglePass>("Triangle", *m_metalContext, *m_commandBufferPool);
+    m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->objects.size());
 
     m_renderGraph->Compile();
 

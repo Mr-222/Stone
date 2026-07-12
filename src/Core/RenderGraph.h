@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 #include <Metal/Metal.hpp>
 
 #include "CommandBuffer.h"
@@ -35,13 +36,27 @@ public:
         std::function<void(const PassData&, RenderGraphResources&, CommandBuffer&)> executeFn
     );
 
+    template<typename PassType>
+    void AddPassNode(const std::string& name, auto&&... args);
+
     void Compile();
 
     void Execute(MTL4::CommandQueue*);
 
 private:
+    struct PassHolderBase {
+        virtual ~PassHolderBase() = default;
+    };
+
+    template<typename T>
+    struct PassHolder : PassHolderBase {
+        std::unique_ptr<T> pass;
+        PassHolder(std::unique_ptr<T> p) : pass(std::move(p)) {}
+    };
+
+    std::vector<std::unique_ptr<PassHolderBase>> m_passObjects;
     // TODO: add dependency map
-    std::vector<std::unique_ptr<RenderPassNodeBase>> m_passes;
+    std::unordered_map<std::string, std::unique_ptr<RenderPassNodeBase>> m_passes;
     RenderGraphResources m_resources;
     std::shared_ptr<MetalContext> m_metalContext;
     std::shared_ptr<CommandBufferPool> m_commandBufferPool;
@@ -64,5 +79,16 @@ void RenderGraph::AddPass(
         builder.GetResourceAccesses(),
         data,
         std::move(executeFn));
-    m_passes.emplace_back(std::move(node));
+    assert(!m_passes.contains(name));
+    m_passes[name] = std::move(node);
+}
+
+template<typename PassType>
+void RenderGraph::AddPassNode(const std::string& name, auto&&... args) {
+    auto pass = std::make_unique<PassType>();
+    pass->Setup(std::forward<decltype(args)>(args)...);
+    pass->AddToGraph(*this);
+    
+    // Type-erase the unique_ptr and store it to keep the pass alive
+    m_passObjects.push_back(std::make_unique<PassHolder<PassType>>(std::move(pass)));
 }

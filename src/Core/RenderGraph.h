@@ -39,6 +39,8 @@ public:
     template<typename PassType>
     void AddPassNode(const std::string& name, auto&&... args);
 
+    void SetDependencyGraph(const std::unordered_map<std::string, std::vector<std::string>>& dependencies);
+
     void Compile();
 
     void Execute(MTL4::CommandQueue*);
@@ -55,8 +57,10 @@ private:
     };
 
     std::vector<std::unique_ptr<PassHolderBase>> m_passObjects;
-    // TODO: add dependency map
+    std::unordered_map<std::string, std::vector<std::string>> m_dependencyGraph;
     std::unordered_map<std::string, std::unique_ptr<RenderPassNodeBase>> m_passes;
+    std::vector<std::string> m_executionOrder;
+
     RenderGraphResources m_resources;
     std::shared_ptr<MetalContext> m_metalContext;
     std::shared_ptr<CommandBufferPool> m_commandBufferPool;
@@ -68,13 +72,12 @@ void RenderGraph::AddPass(
     std::function<void(RenderGraphBuilder&, PassData&, RenderGraphResources&)> setupFn,
     std::function<void(const PassData&, RenderGraphResources&, CommandBuffer&)> executeFn)
 {
-    // TODO: Add name as key to dependency map
-
     PassData data;
     RenderGraphBuilder builder;
     setupFn(builder, data, m_resources);
 
     auto node = std::make_unique<RenderPassNode<PassData>>(
+        m_metalContext->GetDevice(),
         name,
         builder.GetResourceAccesses(),
         data,

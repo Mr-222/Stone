@@ -53,6 +53,10 @@ void Renderer::Setup() {
     m_renderGraph->AddPassNode<TrianglePass>("Triangle", *m_metalContext, *m_commandBufferPool);
     m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->objects.size());
 
+    m_renderGraph->SetDependencyGraph({{
+        "Triangle", { "ObjectCulling" }
+    }});
+
     m_renderGraph->Compile();
 
     pool->release();

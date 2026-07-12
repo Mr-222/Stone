@@ -19,6 +19,7 @@ public:
     CA::MetalDrawable* GetCurrentDrawable() const { return m_currentDrawable; }
     MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT]; }
     MTL4::CommandQueue* GetCommandQueue() const { return m_queue; }
+    uint64_t GetCurrentFrameIndex() const { return m_currentFrameIndex; }
 
 private:
     MTL::Device* m_device;

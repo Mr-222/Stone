@@ -18,12 +18,14 @@ public:
     MTL::Device* GetDevice() const { return m_device; }
     CA::MetalDrawable* GetCurrentDrawable() const { return m_currentDrawable; }
     MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT]; }
-    MTL4::CommandQueue* GetCommandQueue() const { return m_queue; }
+    MTL4::CommandQueue* GetRenderCommandQueue() const { return m_renderQueue; }
+    MTL4::CommandQueue* GetComputeCommandQueue() const { return m_computeQueue; }
     uint64_t GetCurrentFrameIndex() const { return m_currentFrameIndex; }
 
 private:
     MTL::Device* m_device;
-    MTL4::CommandQueue* m_queue;
+    MTL4::CommandQueue* m_renderQueue;
+    MTL4::CommandQueue* m_computeQueue;
 
     // Synchronization primitives
     std::counting_semaphore<MAX_FRAMES_IN_FLIGHT> m_frameBoundarySemaphore;

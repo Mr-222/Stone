@@ -4,20 +4,22 @@
 #include <Metal/Metal.hpp>
 
 #include "Core/RenderGraphResources.h"
+#include "Pass.h"
 
 class Buffer;
 class CommandBufferPool;
 class Heap;
 class MetalContext;
-class RenderGraph;
 
-class TrianglePass {
+class TrianglePass final : Pass {
 public:
     TrianglePass();
     ~TrianglePass();
 
     void Setup(MetalContext& context, CommandBufferPool& commandBufferPool);
-    void AddToGraph(RenderGraph& graph);
+    void AddToGraph(RenderGraph& graph) override;
+
+    static constexpr bool IsCompute = false;
 
 private:
     MTL::RenderPipelineState* m_pipelineState = nullptr;

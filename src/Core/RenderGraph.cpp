@@ -63,8 +63,8 @@ void RenderGraph::Compile() {
 
         if (auto it = m_dependencyGraph.find(name); it != m_dependencyGraph.end()) {
             for (const std::string& dependencyName : it->second) {
-                MTL::Event* event = m_passes.at(dependencyName)->Event;
-                pass->WaitEventList.emplace_back(event);
+                const MTL::Event* event = m_passes.at(dependencyName)->GetSignalEvent();
+                pass->GetWaitEventsList().emplace_back(event);
             }
         }
     }
@@ -110,15 +110,17 @@ void RenderGraph::Compile() {
         m_executionOrder.size(), m_passes.size());
 }
 
-void RenderGraph::Execute(MTL4::CommandQueue* queue) {
-    LOG_ERROR_IF(!queue, "RenderGraph execute requires a valid command queue.");
+void RenderGraph::Execute(MTL4::CommandQueue* renderQueue, MTL4::CommandQueue* computeQueue) {
+    LOG_ERROR_IF(!renderQueue, "RenderGraph execute requires a valid render command queue.");
+    LOG_ERROR_IF(!computeQueue, "RenderGraph execute requires a valid compute command queue.");
 
     const uint64_t frameIndex = m_metalContext->GetCurrentFrameIndex();
 
     for (const auto& name : m_executionOrder) {
         auto& pass = m_passes.at(name);
+        auto queue = pass->IsComputePass ? computeQueue : renderQueue;
 
-        for (MTL::Event* waitEvent : pass->WaitEventList) {
+        for (const MTL::Event* waitEvent : pass->GetWaitEventsList()) {
             queue->wait(waitEvent, frameIndex);
         }
 
@@ -126,6 +128,6 @@ void RenderGraph::Execute(MTL4::CommandQueue* queue) {
         pass->Execute(m_resources, commandBuffer);
         commandBuffer.SubmitTo(queue);
 
-        queue->signalEvent(pass->Event, frameIndex);
+        queue->signalEvent(pass->GetSignalEvent(), frameIndex);
     }
 }

@@ -80,8 +80,8 @@ void TrianglePass::Setup(MetalContext& context, CommandBufferPool& commandBuffer
     Buffer colorBufferCopy(device, colors.data(), sizeof(colors), MTL::ResourceStorageModeShared);
     m_positionBuffer = std::make_unique<Buffer>(*m_privateHeap, sizeof(positions), MTL::ResourceStorageModePrivate);
     m_colorBuffer = std::make_unique<Buffer>(*m_privateHeap, sizeof(colors), MTL::ResourceStorageModePrivate);
-    m_positionBuffer->UploadFromFlush(positionBufferCopy, commandBufferPool, context.GetCommandQueue());
-    m_colorBuffer->UploadFromFlush(colorBufferCopy, commandBufferPool, context.GetCommandQueue());
+    m_positionBuffer->UploadFromFlush(positionBufferCopy, commandBufferPool, context.GetRenderCommandQueue());
+    m_colorBuffer->UploadFromFlush(colorBufferCopy, commandBufferPool, context.GetRenderCommandQueue());
     LOG_ERROR_IF(!m_positionBuffer->GetNative() || !m_colorBuffer->GetNative(), "Failed to allocate triangle buffers");
 
     m_argumentBuffer = std::make_unique<Buffer>(*m_sharedHeap, argumentEncoder->encodedLength(), MTL::ResourceStorageModeShared);
@@ -109,6 +109,7 @@ void TrianglePass::AddToGraph(RenderGraph& graph) {
 
     graph.AddPass<TrianglePassData>(
         "Triangle",
+        IsCompute,
         [this, swapchainHandle, frameUniformHandle](RenderGraphBuilder& builder, TrianglePassData& data, RenderGraphResources& resources) {
             data.colorAttachment = builder.WriteColor(swapchainHandle, RenderGraphColorAttachmentDesc{
                 .loadAction = MTL::LoadActionClear,

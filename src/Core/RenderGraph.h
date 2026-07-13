@@ -16,6 +16,15 @@
 #include "RenderGraphResources.h"
 #include "RenderPassNode.h"
 
+// Forward declaration
+class RenderGraph;
+
+template<typename T>
+concept RenderPassType = requires(T pass, RenderGraph& graph) {
+    { T::IsCompute } -> std::same_as<const bool&>;
+    { pass.AddToGraph(graph) } -> std::same_as<void>;
+};
+
 class RenderGraph {
 public:
     RenderGraph(std::shared_ptr<MetalContext> metalContext, std::shared_ptr<CommandBufferPool> commandBufferPool);
@@ -32,18 +41,19 @@ public:
     template<typename PassData>
     void AddPass(
         const std::string& name,
+        bool isComputePass,
         std::function<void(RenderGraphBuilder&, PassData&, RenderGraphResources&)> setupFn,
         std::function<void(const PassData&, RenderGraphResources&, CommandBuffer&)> executeFn
     );
 
-    template<typename PassType>
+    template<RenderPassType PassType>
     void AddPassNode(const std::string& name, auto&&... args);
 
     void SetDependencyGraph(const std::unordered_map<std::string, std::vector<std::string>>& dependencies);
 
     void Compile();
 
-    void Execute(MTL4::CommandQueue*);
+    void Execute(MTL4::CommandQueue* renderQueue, MTL4::CommandQueue* computeQueue);
 
 private:
     struct PassHolderBase {
@@ -69,6 +79,7 @@ private:
 template<typename PassData>
 void RenderGraph::AddPass(
     const std::string& name,
+    bool isComputePass,
     std::function<void(RenderGraphBuilder&, PassData&, RenderGraphResources&)> setupFn,
     std::function<void(const PassData&, RenderGraphResources&, CommandBuffer&)> executeFn)
 {
@@ -80,13 +91,14 @@ void RenderGraph::AddPass(
         m_metalContext->GetDevice(),
         name,
         builder.GetResourceAccesses(),
+        isComputePass,
         data,
         std::move(executeFn));
     assert(!m_passes.contains(name));
     m_passes[name] = std::move(node);
 }
 
-template<typename PassType>
+template<RenderPassType PassType>
 void RenderGraph::AddPassNode(const std::string& name, auto&&... args) {
     auto pass = std::make_unique<PassType>();
     pass->Setup(std::forward<decltype(args)>(args)...);

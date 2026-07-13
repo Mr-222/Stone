@@ -142,5 +142,5 @@ void Renderer::Run() {
 }
 
 void Renderer::DoRender() {
-    m_renderGraph->Execute(m_metalContext->GetCommandQueue());
+    m_renderGraph->Execute(m_metalContext->GetRenderCommandQueue(), m_metalContext->GetComputeCommandQueue());
 }

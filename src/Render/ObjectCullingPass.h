@@ -5,6 +5,7 @@
 #include <Metal/Metal.hpp>
 
 #include "Mesh.h"
+#include "Pass.h"
 
 class Buffer;
 class CommandBufferPool;
@@ -13,13 +14,15 @@ class MetalContext;
 class RenderGraph;
 class IndirectCommandBuffer;
 
-class ObjectCullingPass {
+class ObjectCullingPass final : Pass {
 public:
     ObjectCullingPass();
     ~ObjectCullingPass();
 
     void Setup(MetalContext& context, const int numObjects);
-    void AddToGraph(RenderGraph& graph);
+    void AddToGraph(RenderGraph& graph) override;
+
+    static constexpr bool IsCompute = true;
 
 private:
     MTL::ComputePipelineState* m_pipelineState = nullptr;

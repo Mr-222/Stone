@@ -44,6 +44,10 @@ void Window::PollEvents() {
     glfwPollEvents();
 }
 
+void Window::SetTitle(const std::string& title) {
+    glfwSetWindowTitle(m_window, title.c_str());
+}
+
 GLFWwindow* Window::GetGLFWWindow() {
     return m_window;
 }

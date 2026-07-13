@@ -11,13 +11,15 @@
 
 class RenderPassNodeBase {
 public:
-    RenderPassNodeBase(std::string name, std::vector<RenderGraphResourceAccess> resourceAccesses)
+    RenderPassNodeBase(MTL::Device* device ,std::string name, std::vector<RenderGraphResourceAccess> resourceAccesses, bool isComputePass)
         : m_name(std::move(name))
         , m_resourceAccesses(std::move(resourceAccesses))
+        , m_event(device->newEvent())
+        , IsComputePass(isComputePass)
     {
     }
 
-    virtual ~RenderPassNodeBase() = default;
+    virtual ~RenderPassNodeBase() { m_event->release(); }
 
     // Graph calls this during rg.Execute()
     virtual void Execute(RenderGraphResources&, CommandBuffer&) = 0;
@@ -25,9 +27,18 @@ public:
     const std::string& GetName() const { return m_name; }
     const std::vector<RenderGraphResourceAccess>& GetResourceAccesses() const { return m_resourceAccesses; }
 
+    const MTL::Event* GetSignalEvent() { return m_event; }
+    std::vector<const MTL::Event*>& GetWaitEventsList() { return m_waitEventList; }
+
+    bool IsComputePass;
+
 private:
     std::string m_name;
     std::vector<RenderGraphResourceAccess> m_resourceAccesses;
+
+    // For synchronizing between passes
+    MTL::Event* m_event;
+    std::vector<const MTL::Event*> m_waitEventList;
 };
 
 template<typename PassData>
@@ -36,11 +47,13 @@ public:
     using ExecuteCallback = std::function<void(const PassData&, RenderGraphResources&, CommandBuffer&)>;
 
     RenderPassNode(
+        MTL::Device* device,
         std::string name,
         std::vector<RenderGraphResourceAccess> resourceAccesses,
+        bool isComputePass,
         const PassData& data,
         ExecuteCallback executeFn)
-        : RenderPassNodeBase(std::move(name), std::move(resourceAccesses))
+        : RenderPassNodeBase(device, std::move(name), std::move(resourceAccesses), isComputePass)
         , m_data(data)
         , m_executeFn(std::move(executeFn))
     {

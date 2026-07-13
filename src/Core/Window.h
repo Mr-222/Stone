@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <QuartzCore/QuartzCore.hpp>
 
 inline constexpr uint MAX_FRAMES_IN_FLIGHT = 3;
@@ -13,6 +14,7 @@ public:
 
     bool ShouldClose();
     void PollEvents();
+    void SetTitle(const std::string& title);
     GLFWwindow* GetGLFWWindow();
     CA::MetalLayer* GetCAMetalLayer();
 

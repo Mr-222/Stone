@@ -50,13 +50,12 @@ void Renderer::Setup() {
     m_scene->CommitToGPU(m_metalContext->GetDevice());
     m_scene->RegisterBuffers(*m_renderGraph);
 
-    m_trianglePass = std::make_unique<TrianglePass>();
-    m_trianglePass->Setup(*m_metalContext, *m_commandBufferPool);
-    m_trianglePass->AddToGraph(*m_renderGraph);
+    m_renderGraph->AddPassNode<TrianglePass>("Triangle", *m_metalContext, *m_commandBufferPool);
+    m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->objects.size());
 
-    m_objectCullingPass = std::make_unique<ObjectCullingPass>();
-    m_objectCullingPass->Setup(*m_metalContext, m_scene->objects.size());
-    m_objectCullingPass->AddToGraph(*m_renderGraph);
+    m_renderGraph->SetDependencyGraph({{
+        "Triangle", { "ObjectCulling" }
+    }});
 
     m_renderGraph->Compile();
 
@@ -97,6 +96,8 @@ void Renderer::Run() {
     });
 
     float lastFrameTime = glfwGetTime();
+    int frameCount = 0;
+    float fpsAccumulator = 0.0f;
 
     while (!m_window->ShouldClose()) {
         NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
@@ -106,6 +107,15 @@ void Renderer::Run() {
         float currentFrameTime = glfwGetTime();
         float deltaTime = currentFrameTime - lastFrameTime;
         lastFrameTime = currentFrameTime;
+
+        frameCount++;
+        fpsAccumulator += deltaTime;
+        if (fpsAccumulator >= 0.5f) {
+            float fps = frameCount / fpsAccumulator;
+            m_window->SetTitle("Stone | " + std::to_string(static_cast<int>(fps)) + " FPS");
+            frameCount = 0;
+            fpsAccumulator = 0.0f;
+        }
 
         GLFWwindow* glfwWindow = m_window->GetGLFWWindow();
         if (glfwGetKey(glfwWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
@@ -143,5 +153,5 @@ void Renderer::Run() {
 }
 
 void Renderer::DoRender() {
-    m_renderGraph->Execute(m_metalContext->GetCommandQueue());
+    m_renderGraph->Execute(m_metalContext->GetRenderCommandQueue(), m_metalContext->GetComputeCommandQueue());
 }

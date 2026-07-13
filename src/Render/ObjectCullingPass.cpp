@@ -102,6 +102,7 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
 
     graph.AddPass<ObjectCullingPassData>(
         "ObjectCulling",
+        IsCompute,
         [=, this](RenderGraphBuilder& builder, ObjectCullingPassData& data, RenderGraphResources& resources) {
             data.globalIndexBufferHandle = globalIndexBufferHandle;
             data.indexBufferInfoBufferHandle = indexBufferInfoBufferHandle;

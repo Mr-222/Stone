@@ -5,7 +5,8 @@
 
 MetalContext::MetalContext(CA::MetalLayer* metalLayer): m_currentFrameIndex(0), m_frameBoundarySemaphore(MAX_FRAMES_IN_FLIGHT) {
     m_device = MTL::CreateSystemDefaultDevice();
-    m_queue = m_device->newMTL4CommandQueue();
+    m_renderQueue = m_device->newMTL4CommandQueue();
+    m_computeQueue = m_device->newMTL4CommandQueue();
 
     m_frameEvent = m_device->newSharedEvent();
     m_eventListener = MTL::SharedEventListener::alloc()->init();
@@ -19,7 +20,7 @@ MetalContext::MetalContext(CA::MetalLayer* metalLayer): m_currentFrameIndex(0), 
     m_swapchain->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
     m_swapchain->setFramebufferOnly(true);
     m_swapchain->setMaximumDrawableCount(MAX_FRAMES_IN_FLIGHT);
-    m_queue->addResidencySet(m_swapchain->residencySet());
+    m_renderQueue->addResidencySet(m_swapchain->residencySet());
 }
 
 void MetalContext::BeginFrame() {
@@ -41,10 +42,10 @@ void MetalContext::EndFrame() {
         sema->release();
     });
 
-    m_queue->signalEvent(m_frameEvent, signalValue);
+    m_renderQueue->signalEvent(m_frameEvent, signalValue);
 
-    m_queue->wait(m_currentDrawable);
-    m_queue->signalDrawable(m_currentDrawable);
+    m_renderQueue->wait(m_currentDrawable);
+    m_renderQueue->signalDrawable(m_currentDrawable);
     m_currentDrawable->present();
 
     m_currentFrameIndex++;

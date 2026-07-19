@@ -47,7 +47,7 @@ void Renderer::Setup() {
 
     m_scene = std::make_unique<Scene>();
     m_scene->LoadGltf("./Models/FlightHelmet/glTF/FlightHelmet.gltf");
-    m_scene->CommitToGPU(m_metalContext->GetDevice());
+    m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);
 
     m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->objects.size());

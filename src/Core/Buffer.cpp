@@ -82,6 +82,7 @@ void Buffer::UpdateStaged(const void *data, size_t size, size_t offset, CommandB
     // 3. Issue the copy command
     MTL4::ComputeCommandEncoder* encoder = temp.BeginComputePass();
     encoder->copyFromBuffer(stagingBuffer.GetNative(), 0, m_buffer, offset, size);
+    encoder->endEncoding();
 
     temp.SubmitTo(queue);
 }

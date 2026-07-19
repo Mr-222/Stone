@@ -6,8 +6,8 @@ class MetalContext;
 class Window;
 class CommandBufferPool;
 class RenderGraph;
-class TrianglePass;
 class ObjectCullingPass;
+class OpaqueDirectLightingPass;
 class Scene;
 class Camera;
 class Buffer;
@@ -31,8 +31,8 @@ private:
     std::shared_ptr<CommandBufferPool> m_commandBufferPool;
 
     std::unique_ptr<RenderGraph> m_renderGraph;
-    std::unique_ptr<TrianglePass> m_trianglePass;
     std::unique_ptr<ObjectCullingPass> m_objectCullingPass;
+    std::unique_ptr<OpaqueDirectLightingPass> m_opaqueDirectLightingPass;
     std::unique_ptr<Scene> m_scene;
 
     std::unique_ptr<Camera> m_camera;

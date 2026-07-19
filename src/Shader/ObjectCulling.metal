@@ -8,11 +8,15 @@ bool IsVisible() {
 kernel void objectCulling_main(
     uint objID [[thread_position_in_grid]],
     device IndirectCommandBufferExecutionRange& executionRange [[buffer(ObjectCullingBufferIndex::ExecutionRange)]],
+    constant ObjectCullingParams& params [[buffer(ObjectCullingBufferIndex::CullingParams)]],
     constant IndexBufferInfo& indexBufferInfo [[buffer(ObjectCullingBufferIndex::IndexBufferInfo)]],
     device GPURenderObject* objects [[buffer(ObjectCullingBufferIndex::RenderObjects)]],
     device Visibility* visibilities [[buffer(ObjectCullingBufferIndex::Visibilities)]],
     device ObjectCullingICBContainer& icb [[buffer(ObjectCullingBufferIndex::ICBContainer)]])
 {
+    if (objID >= params.objectCount)
+        return;
+
     device GPURenderObject& obj = objects[objID];
 
     if (IsVisible()) {

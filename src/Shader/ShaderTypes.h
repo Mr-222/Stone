@@ -41,6 +41,10 @@ struct IndirectCommandBufferExecutionRange {
 #endif
 };
 
+struct ObjectCullingParams {
+    uint32_t objectCount;
+};
+
 struct IndexBufferInfo {
     uint64_t addr;
 };
@@ -51,6 +55,7 @@ struct Visibility {
 
 enum class ObjectCullingBufferIndex {
     ExecutionRange,
+    CullingParams,
     IndexBufferInfo,
     RenderObjects,
     Visibilities,
@@ -75,6 +80,33 @@ enum class TriangleBindlessArgumentID {
     MaxArgumentID,
 };
 
+enum class OpaqueDirectLightingBufferIndex {
+    BindlessArguments,
+    FrameUniform,
+    MaxBufferBindCount,
+};
+
+enum class OpaqueDirectLightingBindlessArgumentID {
+    Vertices,
+    MaxArgumentID,
+};
+
+#ifdef __METAL_VERSION__
+struct GPUVertex {
+    packed_float3 position;
+    packed_float3 normal;
+    packed_float2 uv;
+    packed_float3 tangent;
+};
+#else
+struct GPUVertex {
+    float position[3];
+    float normal[3];
+    float uv[2];
+    float tangent[3];
+};
+#endif
+
 #ifdef __METAL_VERSION__
 struct ObjectCullingICBContainer {
     command_buffer commandBuffer [[id(ObjectCullingICBArgumentID::CommandBuffer)]];
@@ -83,5 +115,9 @@ struct ObjectCullingICBContainer {
 struct TriangleBindlessArguments {
     const device float4* positions [[id(TriangleBindlessArgumentID::Positions)]];
     const device float4* colors [[id(TriangleBindlessArgumentID::Colors)]];
+};
+
+struct OpaqueDirectLightingBindlessArguments {
+    const device GPUVertex* vertices [[id(OpaqueDirectLightingBindlessArgumentID::Vertices)]];
 };
 #endif

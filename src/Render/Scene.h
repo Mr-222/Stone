@@ -11,7 +11,7 @@
 class Scene {
 public:
     void LoadGltf(std::filesystem::path path);
-    void CommitToGPU(MTL::Device* device);
+    void CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPool, MTL4::CommandQueue* queue);
     void RegisterBuffers(RenderGraph& graph);
 
     std::vector<Vertex> globalVertices;

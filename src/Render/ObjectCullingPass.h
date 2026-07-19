@@ -30,9 +30,9 @@ private:
     std::unique_ptr<IndirectCommandBuffer> m_indirectCB;
 
     std::unique_ptr<Buffer> m_visibilityBuffer;
+    std::unique_ptr<Buffer> m_cullingParamsBuffer;
     std::unique_ptr<Buffer> m_ICBExecutionRangeBuffer;
     std::unique_ptr<Buffer> m_icbArgumentBuffer;
 
     int m_numObjects;
 };
-

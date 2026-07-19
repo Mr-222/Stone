@@ -1,9 +1,9 @@
 add_library(Render STATIC
         Renderer.cpp
-        TrianglePass.cpp
         Scene.cpp
         Camera.cpp
         ObjectCullingPass.cpp
+        OpaqueDirectLightingPass.cpp
 )
 
 target_include_directories(Render PUBLIC

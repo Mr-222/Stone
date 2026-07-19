@@ -179,24 +179,29 @@ void Scene::LoadGltf(std::filesystem::path path) {
     });
 }
 
-void Scene::CommitToGPU(MTL::Device* device) {
+void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPool, MTL4::CommandQueue* queue) {
     LOG_ERROR_IF(!device, "Failed to commit scene to GPU: device is null");
+    LOG_ERROR_IF(!queue, "Failed to commit scene to GPU: command queue is null");
 
     LOG_WARN_IF(globalVertices.empty(), "Scene has no vertices to commit");
+    const size_t vertexBufferSize = globalVertices.size() * sizeof(Vertex);
     m_vertexBuffer = std::make_unique<Buffer>(
         device,
-        globalVertices.data(),
-        globalVertices.size() * sizeof(Vertex),
-        MTL::ResourceStorageModeShared);
+        vertexBufferSize,
+        MTL::ResourceStorageModePrivate);
     m_vertexBuffer->GetNative()->setLabel(NS::String::string("Global Vertex Buffer", NS::UTF8StringEncoding));
+    if (vertexBufferSize > 0)
+        m_vertexBuffer->UpdateStaged(globalVertices.data(), vertexBufferSize, 0, commandBufferPool, queue);
 
     LOG_WARN_IF(globalIndices.empty(), "Scene has no indices to commit");
+    const size_t indexBufferSize = globalIndices.size() * sizeof(uint32_t);
     m_indexBuffer = std::make_unique<Buffer>(
         device,
-        globalIndices.data(),
-        globalIndices.size() * sizeof(uint32_t),
-        MTL::ResourceStorageModeShared);
+        indexBufferSize,
+        MTL::ResourceStorageModePrivate);
     m_indexBuffer->GetNative()->setLabel(NS::String::string("Global Index Buffer", NS::UTF8StringEncoding));
+    if (indexBufferSize > 0)
+        m_indexBuffer->UpdateStaged(globalIndices.data(), indexBufferSize, 0, commandBufferPool, queue);
 
     const uint64_t indexBufferAddress = m_indexBuffer->GetGPUAddress();
     m_indexBufferInfoBuffer = std::make_unique<Buffer>(
@@ -224,10 +229,11 @@ void Scene::CommitToGPU(MTL::Device* device) {
     }
     m_renderObjBuffer = std::make_unique<Buffer>(
         device,
-        roEntries.data(),
         roEntries.size() * sizeof(RenderObjectGPUEntry),
-        MTL::ResourceStorageModeShared);
+        MTL::ResourceStorageModePrivate);
     m_renderObjBuffer->GetNative()->setLabel(NS::String::string("Render Object Buffer", NS::UTF8StringEncoding));
+    if (!roEntries.empty())
+        m_renderObjBuffer->UpdateStaged(roEntries.data(), roEntries.size() * sizeof(RenderObjectGPUEntry), 0, commandBufferPool, queue);
 }
 
 void Scene::RegisterBuffers(RenderGraph &graph) {

@@ -9,8 +9,8 @@
 #include "Core/Window.h"
 #include "Core/RenderGraph.h"
 #include "Render/Camera.h"
-#include "Render/TrianglePass.h"
 #include "Render/ObjectCullingPass.h"
+#include "Render/OpaqueDirectLightingPass.h"
 #include "Render/Scene.h"
 
 struct FrameUniform {
@@ -47,14 +47,14 @@ void Renderer::Setup() {
 
     m_scene = std::make_unique<Scene>();
     m_scene->LoadGltf("./Models/FlightHelmet/glTF/FlightHelmet.gltf");
-    m_scene->CommitToGPU(m_metalContext->GetDevice());
+    m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);
 
-    m_renderGraph->AddPassNode<TrianglePass>("Triangle", *m_metalContext, *m_commandBufferPool);
     m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->objects.size());
+    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->objects.size());
 
     m_renderGraph->SetDependencyGraph({{
-        "Triangle", { "ObjectCulling" }
+        "OpaqueDirectLighting", { "ObjectCulling" }
     }});
 
     m_renderGraph->Compile();

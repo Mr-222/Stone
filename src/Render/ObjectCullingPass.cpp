@@ -27,15 +27,26 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
 
     m_visibilityBuffer = std::make_unique<Buffer>(
         device,
-        numObjects * sizeof(uint32_t),
-        MTL::ResourceStorageModeShared
+        numObjects * sizeof(Visibility),
+        MTL::ResourceStorageModePrivate
     );
     m_visibilityBuffer->GetNative()->setLabel(NS::String::string("Visibility Buffer", NS::UTF8StringEncoding));
+
+    const ObjectCullingParams cullingParams {
+        .objectCount = static_cast<uint32_t>(numObjects),
+    };
+    m_cullingParamsBuffer = std::make_unique<Buffer>(
+        device,
+        &cullingParams,
+        sizeof(cullingParams),
+        MTL::ResourceStorageModeShared
+    );
+    m_cullingParamsBuffer->GetNative()->setLabel(NS::String::string("Object Culling Params Buffer", NS::UTF8StringEncoding));
 
     m_ICBExecutionRangeBuffer = std::make_unique<Buffer>(
         device,
         2 * sizeof(uint32_t),
-        MTL::ResourceStorageModeShared
+        MTL::ResourceStorageModePrivate
     );
     m_ICBExecutionRangeBuffer->GetNative()->setLabel(NS::String::string("Execution Range Buffer", NS::UTF8StringEncoding));
 
@@ -88,6 +99,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
     LOG_ERROR_IF(!m_argumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
     m_argumentTable->setAddress(m_ICBExecutionRangeBuffer->GetGPUAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::ExecutionRange));
+    m_argumentTable->setAddress(m_cullingParamsBuffer->GetGPUAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::CullingParams));
     m_argumentTable->setAddress(m_visibilityBuffer->GetGPUAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::Visibilities));
     m_argumentTable->setAddress(m_icbArgumentBuffer->GetGPUAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::ICBContainer));
 }
@@ -137,15 +149,15 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             cmd.AddResource(renderObjectsBuffer);
             cmd.AddResource(m_ICBExecutionRangeBuffer->GetNative());
             cmd.AddResource(m_visibilityBuffer->GetNative());
+            cmd.AddResource(m_cullingParamsBuffer->GetNative());
             cmd.AddResource(indirectCB);
             cmd.AddResource(m_icbArgumentBuffer->GetNative());
 
             MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
             LOG_ERROR_IF(!computeEncoder, "Failed to create compute command encoder");
 
-            // Reset ICB
-            memset(m_visibilityBuffer->GetNative()->contents(), 0, m_visibilityBuffer->GetSize());
-            memset(m_ICBExecutionRangeBuffer->GetNative()->contents(), 0, m_ICBExecutionRangeBuffer->GetSize());
+            computeEncoder->fillBuffer(m_visibilityBuffer->GetNative(), NS::Range(0, m_visibilityBuffer->GetSize()), 0);
+            computeEncoder->fillBuffer(m_ICBExecutionRangeBuffer->GetNative(), NS::Range(0, m_ICBExecutionRangeBuffer->GetSize()), 0);
             computeEncoder->resetCommandsInBuffer(indirectCB, NS::Range(0, m_numObjects));
 
             computeEncoder->setComputePipelineState(m_pipelineState);
@@ -154,6 +166,7 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             MTL::Size gridSize = MTL::Size(m_numObjects, 1, 1);
             MTL::Size threadGroupSize = MTL::Size(width, 1, 1);
             computeEncoder->dispatchThreads(gridSize, threadGroupSize);
+            computeEncoder->optimizeIndirectCommandBuffer(indirectCB, NS::Range(0, m_numObjects));
             computeEncoder->endEncoding();
         });
 }

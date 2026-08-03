@@ -18,6 +18,7 @@ public:
     std::vector<uint32_t> globalIndices;
     std::vector<SubMesh> submeshes;
     std::vector<RenderObject> objects;
+    std::vector<RenderPrimitive> renderPrimitives;
 
 private:
     struct MeshRange
@@ -30,6 +31,6 @@ private:
 
     std::unique_ptr<Buffer> m_vertexBuffer;
     std::unique_ptr<Buffer> m_indexBuffer;
-    std::unique_ptr<Buffer> m_renderObjBuffer;
+    std::unique_ptr<Buffer> m_renderPrimitiveBuffer;
     std::unique_ptr<Buffer> m_indexBufferInfoBuffer;
 };

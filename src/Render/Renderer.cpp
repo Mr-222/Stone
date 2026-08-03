@@ -50,8 +50,8 @@ void Renderer::Setup() {
     m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);
 
-    m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->objects.size());
-    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->objects.size());
+    m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->renderPrimitives.size());
+    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->renderPrimitives.size());
 
     m_renderGraph->SetDependencyGraph({{
         "OpaqueDirectLighting", { "ObjectCulling" }

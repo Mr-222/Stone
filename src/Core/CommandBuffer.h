@@ -24,6 +24,7 @@ private:
     CommandBuffer(MTL4::CommandBuffer* cmd,
                   MTL4::CommandAllocator* allocator,
                   MTL::Device* device,
+                  MTL::ResidencySet* frameResidencySet,
                   CommandBufferPool* pool,
                   bool flushGPU);
 
@@ -32,6 +33,7 @@ private:
 
     MTL4::CommandBuffer*    m_commandBuffer;
     MTL4::CommandAllocator* m_allocator;
-    NS::SharedPtr<MTL::ResidencySet> m_residencySet;
+    MTL::ResidencySet*      m_residencySet;
+    NS::SharedPtr<MTL::ResidencySet> m_ownedResidencySet;
     CommandBufferPool*      m_pool;
 };

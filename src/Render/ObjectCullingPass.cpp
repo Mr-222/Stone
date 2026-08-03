@@ -12,7 +12,7 @@ constexpr const char* kObjetcCullingShaderLibrary = STONE_SHADER_DIR "/ObjectCul
 struct ObjectCullingPassData {
     RenderGraphResourceHandle globalIndexBufferHandle;
     RenderGraphResourceHandle indexBufferInfoBufferHandle;
-    RenderGraphResourceHandle renderObjectsBufferHandle;
+    RenderGraphResourceHandle renderPrimitivesBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
 };
 
@@ -20,20 +20,20 @@ ObjectCullingPass::ObjectCullingPass() = default;
 
 ObjectCullingPass::~ObjectCullingPass() = default;
 
-void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
-    m_numObjects = numObjects;
+void ObjectCullingPass::Setup(MetalContext& context, const int numPrimitives) {
+    m_numPrimitives = numPrimitives;
 
     MTL::Device* device = context.GetDevice();
 
     m_visibilityBuffer = std::make_unique<Buffer>(
         device,
-        numObjects * sizeof(Visibility),
+        numPrimitives * sizeof(Visibility),
         MTL::ResourceStorageModePrivate
     );
     m_visibilityBuffer->GetNative()->setLabel(NS::String::string("Visibility Buffer", NS::UTF8StringEncoding));
 
     const ObjectCullingParams cullingParams {
-        .objectCount = static_cast<uint32_t>(numObjects),
+        .primitiveCount = static_cast<uint32_t>(numPrimitives),
     };
     m_cullingParamsBuffer = std::make_unique<Buffer>(
         device,
@@ -54,7 +54,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numObjects) {
     icbDescriptor->setCommandTypes(MTL::IndirectCommandTypeDrawIndexed);
     icbDescriptor->setInheritBuffers(true);
     icbDescriptor->setInheritPipelineState(true);
-    m_indirectCB = std::make_unique<IndirectCommandBuffer>(device, icbDescriptor, m_numObjects, MTL::ResourceStorageModePrivate);
+    m_indirectCB = std::make_unique<IndirectCommandBuffer>(device, icbDescriptor, m_numPrimitives, MTL::ResourceStorageModePrivate);
     m_indirectCB->GetNative()->setLabel(NS::String::string("Scene ICB", NS::UTF8StringEncoding));
 
     NS::Error* error = nullptr;
@@ -110,7 +110,7 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle indirectCBHandle = graph.RegisterIndirectCommandBuffer("IndirectCommandBuffer", *m_indirectCB);
     RenderGraphResourceHandle globalIndexBufferHandle = graph.DeclareBuffer("GlobalIndexBuffer");
     RenderGraphResourceHandle indexBufferInfoBufferHandle = graph.DeclareBuffer("IndexBufferInfoBuffer");
-    RenderGraphResourceHandle renderObjectsBufferHandle = graph.DeclareBuffer("RenderObjectBuffer");
+    RenderGraphResourceHandle renderPrimitivesBufferHandle = graph.DeclareBuffer("RenderPrimitiveBuffer");
 
     graph.AddPass<ObjectCullingPassData>(
         "ObjectCulling",
@@ -118,12 +118,12 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
         [=, this](RenderGraphBuilder& builder, ObjectCullingPassData& data, RenderGraphResources& resources) {
             data.globalIndexBufferHandle = globalIndexBufferHandle;
             data.indexBufferInfoBufferHandle = indexBufferInfoBufferHandle;
-            data.renderObjectsBufferHandle = renderObjectsBufferHandle;
+            data.renderPrimitivesBufferHandle = renderPrimitivesBufferHandle;
             data.indirectCBHandle = indirectCBHandle;
 
             builder.ReadBuffer(data.globalIndexBufferHandle);
             builder.ReadBuffer(data.indexBufferInfoBufferHandle);
-            builder.ReadBuffer(data.renderObjectsBufferHandle);
+            builder.ReadBuffer(data.renderPrimitivesBufferHandle);
             builder.WriteBuffer(visibilitiesBufferHandle);
             builder.WriteBuffer(executionRangeBufferHandle);
             builder.WriteIndirectCommandBuffer(data.indirectCBHandle);
@@ -131,22 +131,22 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* indexBufferInfoBuffer = resources.GetBuffer(indexBufferInfoBufferHandle);
             m_argumentTable->setAddress(indexBufferInfoBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::IndexBufferInfo));
 
-            MTL::Buffer* renderObjectBuffer = resources.GetBuffer(renderObjectsBufferHandle);
-            m_argumentTable->setAddress(renderObjectBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::RenderObjects));
+            MTL::Buffer* renderPrimitiveBuffer = resources.GetBuffer(renderPrimitivesBufferHandle);
+            m_argumentTable->setAddress(renderPrimitiveBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::RenderPrimitives));
         },
         [this](const ObjectCullingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Buffer* globalIndexBuffer = resources.GetBuffer(data.globalIndexBufferHandle);
             LOG_ERROR_IF(!globalIndexBuffer, "Failed to get global index buffer");
             MTL::Buffer* indexBufferInfoBuffer = resources.GetBuffer(data.indexBufferInfoBufferHandle);
             LOG_ERROR_IF(!indexBufferInfoBuffer, "Failed to get index buffer info");
-            MTL::Buffer* renderObjectsBuffer = resources.GetBuffer(data.renderObjectsBufferHandle);
-            LOG_ERROR_IF(!renderObjectsBuffer, "Failed to get render objects buffer");
+            MTL::Buffer* renderPrimitivesBuffer = resources.GetBuffer(data.renderPrimitivesBufferHandle);
+            LOG_ERROR_IF(!renderPrimitivesBuffer, "Failed to get render primitives buffer");
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
             LOG_ERROR_IF(!indirectCB, "Failed to get indirect command buffer");
 
             cmd.AddResource(globalIndexBuffer);
             cmd.AddResource(indexBufferInfoBuffer);
-            cmd.AddResource(renderObjectsBuffer);
+            cmd.AddResource(renderPrimitivesBuffer);
             cmd.AddResource(m_ICBExecutionRangeBuffer->GetNative());
             cmd.AddResource(m_visibilityBuffer->GetNative());
             cmd.AddResource(m_cullingParamsBuffer->GetNative());
@@ -158,15 +158,15 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
 
             computeEncoder->fillBuffer(m_visibilityBuffer->GetNative(), NS::Range(0, m_visibilityBuffer->GetSize()), 0);
             computeEncoder->fillBuffer(m_ICBExecutionRangeBuffer->GetNative(), NS::Range(0, m_ICBExecutionRangeBuffer->GetSize()), 0);
-            computeEncoder->resetCommandsInBuffer(indirectCB, NS::Range(0, m_numObjects));
+            computeEncoder->resetCommandsInBuffer(indirectCB, NS::Range(0, m_numPrimitives));
 
             computeEncoder->setComputePipelineState(m_pipelineState);
             computeEncoder->setArgumentTable(m_argumentTable);
             NS::UInteger width = m_pipelineState->threadExecutionWidth();
-            MTL::Size gridSize = MTL::Size(m_numObjects, 1, 1);
+            MTL::Size gridSize = MTL::Size(m_numPrimitives, 1, 1);
             MTL::Size threadGroupSize = MTL::Size(width, 1, 1);
             computeEncoder->dispatchThreads(gridSize, threadGroupSize);
-            computeEncoder->optimizeIndirectCommandBuffer(indirectCB, NS::Range(0, m_numObjects));
+            computeEncoder->optimizeIndirectCommandBuffer(indirectCB, NS::Range(0, m_numPrimitives));
             computeEncoder->endEncoding();
         });
 }

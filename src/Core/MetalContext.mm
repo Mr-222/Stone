@@ -13,6 +13,19 @@ MetalContext::MetalContext(CA::MetalLayer* metalLayer): m_currentFrameIndex(0), 
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         m_commandAllocators[i] = m_device->newCommandAllocator();
+
+        MTL::ResidencySetDescriptor* descriptor = MTL::ResidencySetDescriptor::alloc()->init()->autorelease();
+        descriptor->setInitialCapacity(128);
+
+        NS::Error* error = nullptr;
+        MTL::ResidencySet* residencySet = m_device->newResidencySet(descriptor, &error);
+        LOG_ERROR_IF(!residencySet,
+            "Failed to create residency set for frame slot {}: {}",
+            i,
+            error ? error->localizedDescription()->utf8String() : "unknown error");
+
+        residencySet->requestResidency();
+        m_frameResidencySets[i] = NS::TransferPtr(residencySet);
     }
 
     m_swapchain = metalLayer;
@@ -31,6 +44,12 @@ void MetalContext::BeginFrame() {
     LOG_ERROR_IF(!m_currentDrawable, "No more drawables available!");
 
     const uint32_t bufferIndex = static_cast<uint32_t>(m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT);
+    MTL::ResidencySet* residencySet = m_frameResidencySets[bufferIndex].get();
+    if (residencySet->allocationCount() > 0) {
+        residencySet->removeAllAllocations();
+        residencySet->commit();
+    }
+
     m_commandAllocators[bufferIndex]->reset();
 }
 

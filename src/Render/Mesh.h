@@ -42,7 +42,11 @@ struct Mesh
 
 struct RenderObject
 {
-    uint32_t firstSubmesh;
-    uint32_t submeshCount;
     glm::mat4 transform;
+};
+
+struct RenderPrimitive
+{
+    uint32_t submeshIndex;
+    uint32_t objectIndex;
 };

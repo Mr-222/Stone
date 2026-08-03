@@ -21,7 +21,13 @@ CommandBuffer CommandBufferPool::Acquire() {
     m_head = (m_head + 1) % m_capacity;
     m_count--;
 
-    return CommandBuffer(buffer, m_context.GetCurrentAllocator(), m_context.GetDevice(), this, false);
+    return CommandBuffer(
+        buffer,
+        m_context.GetCurrentAllocator(),
+        m_context.GetDevice(),
+        m_context.GetCurrentFrameResidencySet(),
+        this,
+        false);
 }
 
 CommandBuffer CommandBufferPool::AcquireFlushGPU() {
@@ -34,7 +40,13 @@ CommandBuffer CommandBufferPool::AcquireFlushGPU() {
     m_head = (m_head + 1) % m_capacity;
     m_count--;
 
-    return CommandBuffer(buffer, m_context.GetCurrentAllocator(), m_context.GetDevice(), this, true);
+    return CommandBuffer(
+        buffer,
+        m_context.GetCurrentAllocator(),
+        m_context.GetDevice(),
+        nullptr,
+        this,
+        true);
 }
 
 void CommandBufferPool::Release(MTL4::CommandBuffer* buffer) {

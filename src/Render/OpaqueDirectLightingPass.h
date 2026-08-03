@@ -14,7 +14,7 @@ public:
     OpaqueDirectLightingPass();
     ~OpaqueDirectLightingPass();
 
-    void Setup(MetalContext& context, const int numObjects);
+    void Setup(MetalContext& context, int numPrimitives);
     void AddToGraph(RenderGraph& graph) override;
 
     static constexpr bool IsCompute = false;
@@ -26,5 +26,5 @@ private:
 
     std::unique_ptr<Buffer> m_argumentBuffer;
 
-    int m_numObjects;
+    int m_numPrimitives;
 };

@@ -9,20 +9,28 @@
 CommandBuffer::CommandBuffer(MTL4::CommandBuffer* cmd,
                              MTL4::CommandAllocator* allocator,
                              MTL::Device* device,
+                             MTL::ResidencySet* frameResidencySet,
                              CommandBufferPool* pool,
                              bool flush)
     : m_flushGPU(flush)
     , m_hasBegun(false)
     , m_commandBuffer(cmd)
     , m_allocator(allocator)
+    , m_residencySet(frameResidencySet)
     , m_pool(pool)
 {
-    MTL::ResidencySetDescriptor* rsDesc = MTL::ResidencySetDescriptor::alloc()->init()->autorelease();
-    MTL::ResidencySet* set = device->newResidencySet(rsDesc, nullptr);
+    if (!m_flushGPU) {
+        LOG_ERROR_IF(!m_residencySet, "Frame command buffer requires a frame residency set.");
+    } else {
+        MTL::ResidencySetDescriptor* descriptor = MTL::ResidencySetDescriptor::alloc()->init()->autorelease();
+        MTL::ResidencySet* residencySet = device->newResidencySet(descriptor, nullptr);
 
-    LOG_ERROR_IF(!set, "Failed to create residency set for command buffer.");
+        LOG_ERROR_IF(!residencySet, "Failed to create residency set for synchronous command buffer.");
 
-    m_residencySet = NS::TransferPtr(set);
+        residencySet->requestResidency();
+        m_ownedResidencySet = NS::TransferPtr(residencySet);
+        m_residencySet = m_ownedResidencySet.get();
+    }
 }
 
 CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
@@ -30,13 +38,15 @@ CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
     , m_hasBegun(other.m_hasBegun)
     , m_commandBuffer(other.m_commandBuffer)
     , m_allocator(other.m_allocator)
-    , m_residencySet(std::move(other.m_residencySet))
+    , m_residencySet(other.m_residencySet)
+    , m_ownedResidencySet(std::move(other.m_ownedResidencySet))
     , m_pool(other.m_pool)
 {
     other.m_flushGPU = false;
     other.m_hasBegun = false;
     other.m_commandBuffer = nullptr;
     other.m_allocator = nullptr;
+    other.m_residencySet = nullptr;
     other.m_pool = nullptr;
 }
 
@@ -70,7 +80,7 @@ void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
 
     if (m_residencySet->allocationCount() > 0) {
         m_residencySet->commit();
-        m_commandBuffer->useResidencySet(m_residencySet.get());
+        m_commandBuffer->useResidencySet(m_residencySet);
     }
 
     m_commandBuffer->endCommandBuffer();
@@ -96,7 +106,10 @@ void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
         submitQueue->commit(bufferToSubmit, 1);
     }
 
-    m_residencySet->removeAllAllocations();
+    if (m_flushGPU && m_residencySet->allocationCount() > 0) {
+        m_residencySet->removeAllAllocations();
+        m_residencySet->commit();
+    }
 
     m_hasBegun = false;
 }

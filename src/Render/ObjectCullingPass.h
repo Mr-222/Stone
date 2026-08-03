@@ -19,7 +19,7 @@ public:
     ObjectCullingPass();
     ~ObjectCullingPass();
 
-    void Setup(MetalContext& context, const int numObjects);
+    void Setup(MetalContext& context, int numPrimitives);
     void AddToGraph(RenderGraph& graph) override;
 
     static constexpr bool IsCompute = true;
@@ -34,5 +34,5 @@ private:
     std::unique_ptr<Buffer> m_ICBExecutionRangeBuffer;
     std::unique_ptr<Buffer> m_icbArgumentBuffer;
 
-    int m_numObjects;
+    int m_numPrimitives;
 };

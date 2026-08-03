@@ -7,7 +7,7 @@
 #include "Utility/Logger.h"
 #include "GeometryGenerator.h"
 
-struct RenderObjectGPUEntry {
+struct RenderPrimitiveGPUEntry {
     uint32_t baseVertexOffset;
     uint32_t firstIndex;
     uint32_t indexCount;
@@ -171,11 +171,17 @@ void Scene::LoadGltf(std::filesystem::path path) {
         LOG_ERROR_IF(invalidMeshIndex, "Mesh index {} exceeds mesh range", node.meshIndex.value());
 
         const auto& meshRange = meshRanges[node.meshIndex.value()];
+        const auto objectIndex = static_cast<uint32_t>(objects.size());
         objects.push_back(RenderObject{
-            meshRange.firstSubmesh,
-            meshRange.submeshCount,
             ToGlm(transform),
         });
+
+        for (uint32_t i = 0; i < meshRange.submeshCount; ++i) {
+            renderPrimitives.push_back(RenderPrimitive{
+                meshRange.firstSubmesh + i,
+                objectIndex,
+            });
+        }
     });
 }
 
@@ -212,33 +218,31 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     );
     m_indexBufferInfoBuffer->GetNative()->setLabel(NS::String::string("Index Buffer Info Buffer", NS::UTF8StringEncoding));
 
-    std::vector<RenderObjectGPUEntry> roEntries{};
-    roEntries.reserve(objects.size());
-    for (const RenderObject& renderObj : objects) {
-        RenderObjectGPUEntry entry{};
+    std::vector<RenderPrimitiveGPUEntry> primitiveEntries{};
+    primitiveEntries.reserve(renderPrimitives.size());
+    for (const RenderPrimitive& renderPrimitive : renderPrimitives) {
+        const RenderObject& renderObject = objects[renderPrimitive.objectIndex];
+        const SubMesh& submesh = submeshes[renderPrimitive.submeshIndex];
 
-        entry.transform = renderObj.transform;
-        entry.baseVertexOffset = submeshes[renderObj.firstSubmesh].vertexOffset;
-        entry.firstIndex = submeshes[renderObj.firstSubmesh].firstIndex;
-
-        entry.indexCount = 0;
-        for (int i = 0; i < renderObj.submeshCount; ++i)
-            entry.indexCount += submeshes[renderObj.firstSubmesh + i].indexCount;
-
-        roEntries.push_back(entry);
+        RenderPrimitiveGPUEntry entry{};
+        entry.transform = renderObject.transform;
+        entry.baseVertexOffset = submesh.vertexOffset;
+        entry.firstIndex = submesh.firstIndex;
+        entry.indexCount = submesh.indexCount;
+        primitiveEntries.push_back(entry);
     }
-    m_renderObjBuffer = std::make_unique<Buffer>(
+    m_renderPrimitiveBuffer = std::make_unique<Buffer>(
         device,
-        roEntries.size() * sizeof(RenderObjectGPUEntry),
+        primitiveEntries.size() * sizeof(RenderPrimitiveGPUEntry),
         MTL::ResourceStorageModePrivate);
-    m_renderObjBuffer->GetNative()->setLabel(NS::String::string("Render Object Buffer", NS::UTF8StringEncoding));
-    if (!roEntries.empty())
-        m_renderObjBuffer->UpdateStaged(roEntries.data(), roEntries.size() * sizeof(RenderObjectGPUEntry), 0, commandBufferPool, queue);
+    m_renderPrimitiveBuffer->GetNative()->setLabel(NS::String::string("Render Primitive Buffer", NS::UTF8StringEncoding));
+    if (!primitiveEntries.empty())
+        m_renderPrimitiveBuffer->UpdateStaged(primitiveEntries.data(), primitiveEntries.size() * sizeof(RenderPrimitiveGPUEntry), 0, commandBufferPool, queue);
 }
 
 void Scene::RegisterBuffers(RenderGraph &graph) {
     graph.RegisterBuffer("GlobalVertexBuffer", *m_vertexBuffer);
     graph.RegisterBuffer("GlobalIndexBuffer", *m_indexBuffer);
     graph.RegisterBuffer("IndexBufferInfoBuffer", *m_indexBufferInfoBuffer);
-    graph.RegisterBuffer("RenderObjectBuffer", *m_renderObjBuffer);
+    graph.RegisterBuffer("RenderPrimitiveBuffer", *m_renderPrimitiveBuffer);
 }

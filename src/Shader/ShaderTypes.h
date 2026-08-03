@@ -8,7 +8,7 @@ struct FrameUniform {
     float4x4 viewProjection;
 };
 
-struct GPURenderObject {
+struct GPURenderPrimitive {
     uint32_t baseVertex;
     uint32_t firstIndex;
     uint32_t indexCount;
@@ -23,7 +23,7 @@ struct FrameUniform {
     glm::mat4 viewProjection;
 };
 
-struct GPURenderObject {
+struct GPURenderPrimitive {
     uint32_t baseVertex;
     uint32_t firstIndex;
     uint32_t indexCount;
@@ -42,7 +42,7 @@ struct IndirectCommandBufferExecutionRange {
 };
 
 struct ObjectCullingParams {
-    uint32_t objectCount;
+    uint32_t primitiveCount;
 };
 
 struct IndexBufferInfo {
@@ -50,14 +50,14 @@ struct IndexBufferInfo {
 };
 
 struct Visibility {
-    uint32_t objID;
+    uint32_t primitiveID;
 };
 
 enum class ObjectCullingBufferIndex {
     ExecutionRange,
     CullingParams,
     IndexBufferInfo,
-    RenderObjects,
+    RenderPrimitives,
     Visibilities,
     ICBContainer,
     MaxBufferBindCount,

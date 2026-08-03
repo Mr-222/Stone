@@ -17,7 +17,7 @@ struct OpaqueDirectLightingPassData {
     RenderGraphResourceHandle globalVertexBufferHandle;
     RenderGraphResourceHandle globalIndexBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
-    int numObjects;
+    int numPrimitives;
 };
 
 OpaqueDirectLightingPass::OpaqueDirectLightingPass() = default;
@@ -31,8 +31,8 @@ OpaqueDirectLightingPass::~OpaqueDirectLightingPass() {
         m_pipelineState->release();
 }
 
-void OpaqueDirectLightingPass::Setup(MetalContext& context, const int numObjects) {
-    m_numObjects = numObjects;
+void OpaqueDirectLightingPass::Setup(MetalContext& context, const int numPrimitives) {
+    m_numPrimitives = numPrimitives;
 
     MTL::Device* device = context.GetDevice();
 
@@ -107,7 +107,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.globalVertexBufferHandle = globalVertexBufferHandle;
             data.globalIndexBufferHandle = globalIndexBufferHandle;
             data.indirectCBHandle = indirectCBHandle;
-            data.numObjects = m_numObjects;
+            data.numPrimitives = m_numPrimitives;
 
             builder.ReadBuffer(frameUniformHandle);
             builder.ReadBuffer(globalVertexBufferHandle);
@@ -174,7 +174,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             renderEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
             renderEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex);
 
-            renderEncoder->executeCommandsInBuffer(indirectCB, NS::Range(0, data.numObjects));
+            renderEncoder->executeCommandsInBuffer(indirectCB, NS::Range(0, data.numPrimitives));
 
             renderEncoder->endEncoding();
         });

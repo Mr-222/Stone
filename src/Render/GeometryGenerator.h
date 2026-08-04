@@ -217,6 +217,7 @@ private:
             0,
             static_cast<uint32_t>(mesh.indices->size()),
             0,
+            0,
         });
         return mesh;
     }

@@ -1,20 +1,114 @@
 #include "Scene.h"
 
+#include <fstream>
+#include <optional>
+#include <span>
+#include <type_traits>
+
 #include <fastgltf/core.hpp>
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>
 
+#include "Core/CommandBuffer.h"
+#include "Shader/ShaderTypes.h"
+#include "Utility/ImageLoader.h"
 #include "Utility/Logger.h"
 #include "GeometryGenerator.h"
 
-struct RenderPrimitiveGPUEntry {
-    uint32_t baseVertexOffset;
-    uint32_t firstIndex;
-    uint32_t indexCount;
-    // TODO: Add properties for compute shader culling (CellBound, MaterialID, etc.)
-    uint32_t pad0;
-    glm::mat4 transform;
-};
+std::vector<std::byte> ReadFileBytes(const fastgltf::sources::URI& source) {
+    const bool isLocalPath = source.uri.isLocalPath();
+    LOG_ERROR_IF(!isLocalPath, "Only local glTF image URIs are supported.");
+
+    const std::filesystem::path path = source.uri.fspath();
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    LOG_ERROR_IF(!file, "Failed to open glTF image {}.", path.string());
+
+    const auto fileSize = static_cast<size_t>(file.tellg());
+    LOG_ERROR_IF(source.fileByteOffset > fileSize,
+        "Image byte offset {} exceeds file size {} for {}.",
+        source.fileByteOffset,
+        fileSize,
+        path.string());
+
+    std::vector<std::byte> bytes(fileSize - source.fileByteOffset);
+    file.seekg(static_cast<std::streamoff>(source.fileByteOffset), std::ios::beg);
+    file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    LOG_ERROR_IF(!file, "Failed to read glTF image {}.", path.string());
+    return bytes;
+}
+
+std::vector<std::byte> CopyImageBytes(const fastgltf::Asset& asset, const fastgltf::Image& image) {
+    std::vector<std::byte> bytes;
+
+    std::visit([&](const auto& source) {
+        using Source = std::decay_t<decltype(source)>;
+
+        if constexpr (
+            std::is_same_v<Source, fastgltf::sources::Array> ||
+            std::is_same_v<Source, fastgltf::sources::Vector> ||
+            std::is_same_v<Source, fastgltf::sources::ByteView>)
+        {
+            bytes.assign(source.bytes.begin(), source.bytes.end());
+        } else if constexpr (std::is_same_v<Source, fastgltf::sources::BufferView>) {
+            const auto view =
+                fastgltf::DefaultBufferDataAdapter{}(asset, source.bufferViewIndex);
+            bytes.assign(view.begin(), view.end());
+        } else if constexpr (std::is_same_v<Source, fastgltf::sources::URI>) {
+            bytes = ReadFileBytes(source);
+        }
+    }, image.data);
+
+    LOG_ERROR_IF(bytes.empty(), "glTF image '{}' has no supported encoded data.", image.name);
+    return bytes;
+}
+
+size_t AlignUp(const size_t value, const size_t alignment) {
+    return (value + alignment - 1) / alignment * alignment;
+}
+
+void UploadTexture(
+    Texture& texture,
+    const ImageData& image,
+    CommandBufferPool& commandBufferPool,
+    MTL4::CommandQueue* queue)
+{
+    MTL::Texture* nativeTexture = texture.GetNative();
+    MTL::Device* device = nativeTexture->device();
+    const size_t unalignedBytesPerRow = static_cast<size_t>(image.width) * 4;
+    const size_t alignment = device->minimumTextureBufferAlignmentForPixelFormat(nativeTexture->pixelFormat());
+    LOG_ERROR_IF(alignment == 0, "Metal returned an invalid texture-buffer alignment.");
+
+    const size_t bytesPerRow = AlignUp(unalignedBytesPerRow, alignment);
+    const size_t uploadSize = bytesPerRow * image.height;
+    std::vector<uint8_t> uploadData(uploadSize);
+    for (size_t row = 0; row < image.height; ++row) {
+        std::memcpy(
+            uploadData.data() + row * bytesPerRow,
+            image.pixels.data() + row * unalignedBytesPerRow,
+            unalignedBytesPerRow);
+    }
+
+    Buffer stagingBuffer(device, uploadData.data(), uploadData.size(), MTL::ResourceStorageModeShared);
+    CommandBuffer commandBuffer = commandBufferPool.AcquireFlushGPU();
+    commandBuffer.AddResource(stagingBuffer.GetNative());
+    commandBuffer.AddResource(nativeTexture);
+
+    MTL4::ComputeCommandEncoder* encoder = commandBuffer.BeginComputePass();
+    encoder->copyFromBuffer(
+        stagingBuffer.GetNative(),
+        0,
+        bytesPerRow,
+        uploadSize,
+        MTL::Size(image.width, image.height, 1),
+        nativeTexture,
+        0,
+        0,
+        MTL::Origin(0, 0, 0));
+    if (nativeTexture->mipmapLevelCount() > 1)
+        encoder->generateMipmaps(nativeTexture);
+    encoder->endEncoding();
+    commandBuffer.SubmitTo(queue);
+}
 
 glm::mat4 ToGlm(const fastgltf::math::fmat4x4& matrix) {
     glm::mat4 result(1.f);
@@ -26,7 +120,6 @@ glm::mat4 ToGlm(const fastgltf::math::fmat4x4& matrix) {
     return result;
 }
 
-// TODO: Implement submesh so that renderer support materials
 Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
     Mesh outputMesh;
 
@@ -68,7 +161,6 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
 
         // Tex coord
         {
-            // TODO: support baseColorTextureIndex
             const auto* texcoordIt = it->findAttribute("TEXCOORD_0");
             const bool hasTexcoord = texcoordIt != it->attributes.end();
             LOG_WARN_IF(!hasTexcoord, "Failed to find texcoord attribute");
@@ -107,6 +199,7 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
                 static_cast<uint32_t>(indexOffset),
                 static_cast<uint32_t>(indexAccessor.count),
                 0,
+                it->materialIndex.has_value() ? static_cast<uint32_t>(it->materialIndex.value()) : 0,
             });
         }
     }
@@ -128,6 +221,7 @@ Scene::MeshRange Scene::MergeMesh(Mesh&& mesh) {
             indexOffset + submesh.firstIndex,
             submesh.indexCount,
             vertexOffset + submesh.vertexOffset,
+            submesh.materialIndex,
         });
     }
 
@@ -154,9 +248,67 @@ void Scene::LoadGltf(std::filesystem::path path) {
     const bool loadFailed = asset.error() != fastgltf::Error::None;
     LOG_ERROR_IF(loadFailed, "Failed to load glTF: {}", fastgltf::getErrorMessage(asset.error()));
 
+    m_encodedImages.reserve(asset->images.size());
+    for (const fastgltf::Image& image : asset->images)
+        m_encodedImages.emplace_back(CopyImageBytes(asset.get(), image));
+
+    m_textureSources.reserve(asset->textures.size());
+    for (size_t textureIndex = 0; textureIndex < asset->textures.size(); ++textureIndex) {
+        const fastgltf::Texture& texture = asset->textures[textureIndex];
+
+        LOG_ERROR_IF(!texture.imageIndex.has_value(), "glTF texture {} does not reference a supported image.", textureIndex);
+        LOG_ERROR_IF(texture.imageIndex.value() >= asset->images.size(), "glTF texture {} references invalid image {}.", textureIndex, texture.imageIndex.value());
+
+        std::string name(texture.name.begin(), texture.name.end());
+        if (name.empty())
+            name = "Scene Texture " + std::to_string(textureIndex + 1);
+
+        m_textureSources.push_back(TextureSource{
+            static_cast<uint32_t>(texture.imageIndex.value()),
+            false,
+            std::move(name),
+        });
+    }
+
+    materials.reserve(asset->materials.size());
+    for (size_t materialIndex = 0; materialIndex < asset->materials.size(); ++materialIndex) {
+        const fastgltf::Material& gltfMaterial = asset->materials[materialIndex];
+        const auto& factor = gltfMaterial.pbrData.baseColorFactor;
+
+        SceneMaterial material{
+            .baseColorFactor = glm::vec4(factor.x(), factor.y(), factor.z(), factor.w()),
+            .baseColorTextureIndex = 0,
+        };
+
+        if (gltfMaterial.pbrData.baseColorTexture.has_value()) {
+            const fastgltf::TextureInfo& textureInfo = gltfMaterial.pbrData.baseColorTexture.value();
+            LOG_ERROR_IF(textureInfo.textureIndex >= asset->textures.size(),
+                "glTF material {} references invalid base-color texture {}.",
+                materialIndex,
+                textureInfo.textureIndex);
+            LOG_WARN_IF(textureInfo.texCoordIndex != 0,
+                "glTF material {} uses TEXCOORD_{}, but Stone currently samples TEXCOORD_0.",
+                materialIndex,
+                textureInfo.texCoordIndex);
+            LOG_WARN_IF(textureInfo.transform != nullptr,
+                "glTF material {} has a base-color texture transform that is not yet supported.",
+                materialIndex);
+
+            material.baseColorTextureIndex = static_cast<uint32_t>(textureInfo.textureIndex) + 1; // texture 0 is fallback white texture
+            m_textureSources[textureInfo.textureIndex].sRGB = true;
+        }
+
+        materials.push_back(material);
+    }
+
     std::vector<MeshRange> meshRanges;
     meshRanges.reserve(asset->meshes.size());
     for (auto& gltfMesh : asset->meshes) {
+        for (const fastgltf::Primitive& primitive : gltfMesh.primitives) {
+            LOG_ERROR_IF(primitive.materialIndex.has_value() && primitive.materialIndex.value() >= asset->materials.size(),
+                "glTF primitive references invalid material {}.",
+                primitive.materialIndex.value());
+        }
         meshRanges.emplace_back(MergeMesh(LoadMesh(asset.get(), gltfMesh)));
     }
 
@@ -189,6 +341,54 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     LOG_ERROR_IF(!device, "Failed to commit scene to GPU: device is null");
     LOG_ERROR_IF(!queue, "Failed to commit scene to GPU: command queue is null");
 
+    LOG_ERROR_IF(m_textureSources.size() + 1 > kMaxBindlessTextureCount,
+        "Scene needs {} textures, but the bindless table supports {}.",
+        m_textureSources.size() + 1,
+        kMaxBindlessTextureCount);
+
+    m_textures.reserve(m_textureSources.size() + 1);
+    std::vector<std::optional<ImageData>> decodedImages(m_encodedImages.size());
+
+    const auto createTexture = [&](const ImageData& image, const MTL::PixelFormat format, const std::string& name) {
+        MTL::TextureDescriptor* descriptor = MTL::TextureDescriptor::texture2DDescriptor(
+            format,
+            image.width,
+            image.height,
+            true);
+        descriptor->setStorageMode(MTL::StorageModePrivate);
+        descriptor->setUsage(MTL::TextureUsageShaderRead);
+
+        m_textures.emplace_back(device, descriptor);
+        Texture& texture = m_textures.back();
+        texture.GetNative()->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
+        UploadTexture(texture, image, commandBufferPool, queue);
+    };
+
+    const ImageData defaultWhiteTexture {
+        .width = 1,
+        .height = 1,
+        .pixels = { 255, 255, 255, 255 },
+    };
+    createTexture(defaultWhiteTexture, MTL::PixelFormatRGBA8Unorm_sRGB, "Default White Texture");
+
+    for (const TextureSource& textureSource : m_textureSources) {
+        LOG_ERROR_IF(textureSource.imageIndex >= m_encodedImages.size(),
+            "Texture '{}' references invalid image {}.",
+            textureSource.name,
+            textureSource.imageIndex);
+
+        std::optional<ImageData>& decodedImage = decodedImages[textureSource.imageIndex];
+        if (!decodedImage.has_value()) {
+            const std::vector<std::byte>& encodedImage = m_encodedImages[textureSource.imageIndex];
+            decodedImage = DecodeImageRGBA8(std::span(encodedImage.data(), encodedImage.size()));
+        }
+
+        createTexture(
+            decodedImage.value(),
+            textureSource.sRGB ? MTL::PixelFormatRGBA8Unorm_sRGB : MTL::PixelFormatRGBA8Unorm,
+            textureSource.name);
+    }
+
     LOG_WARN_IF(globalVertices.empty(), "Scene has no vertices to commit");
     const size_t vertexBufferSize = globalVertices.size() * sizeof(Vertex);
     m_vertexBuffer = std::make_unique<Buffer>(
@@ -218,26 +418,50 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     );
     m_indexBufferInfoBuffer->GetNative()->setLabel(NS::String::string("Index Buffer Info Buffer", NS::UTF8StringEncoding));
 
-    std::vector<RenderPrimitiveGPUEntry> primitiveEntries{};
+    std::vector<GPURenderPrimitive> primitiveEntries{};
     primitiveEntries.reserve(renderPrimitives.size());
     for (const RenderPrimitive& renderPrimitive : renderPrimitives) {
         const RenderObject& renderObject = objects[renderPrimitive.objectIndex];
         const SubMesh& submesh = submeshes[renderPrimitive.submeshIndex];
 
-        RenderPrimitiveGPUEntry entry{};
-        entry.transform = renderObject.transform;
-        entry.baseVertexOffset = submesh.vertexOffset;
+        GPURenderPrimitive entry{};
+        entry.worldMat = renderObject.transform;
+        entry.baseVertex = submesh.vertexOffset;
         entry.firstIndex = submesh.firstIndex;
         entry.indexCount = submesh.indexCount;
+        entry.materialIndex = submesh.materialIndex;
         primitiveEntries.push_back(entry);
     }
     m_renderPrimitiveBuffer = std::make_unique<Buffer>(
         device,
-        primitiveEntries.size() * sizeof(RenderPrimitiveGPUEntry),
+        primitiveEntries.size() * sizeof(GPURenderPrimitive),
         MTL::ResourceStorageModePrivate);
     m_renderPrimitiveBuffer->GetNative()->setLabel(NS::String::string("Render Primitive Buffer", NS::UTF8StringEncoding));
     if (!primitiveEntries.empty())
-        m_renderPrimitiveBuffer->UpdateStaged(primitiveEntries.data(), primitiveEntries.size() * sizeof(RenderPrimitiveGPUEntry), 0, commandBufferPool, queue);
+        m_renderPrimitiveBuffer->UpdateStaged(primitiveEntries.data(), primitiveEntries.size() * sizeof(GPURenderPrimitive), 0, commandBufferPool, queue);
+
+    std::vector<GPUMaterial> materialEntries{};
+    materialEntries.reserve(materials.size());
+    for (const SceneMaterial& material : materials) {
+        materialEntries.push_back(GPUMaterial{
+            .baseColorFactor = material.baseColorFactor,
+            .baseColorTextureIndex = material.baseColorTextureIndex,
+            .pad0 = 0,
+            .pad1 = 0,
+            .pad2 = 0,
+        });
+    }
+    m_materialBuffer = std::make_unique<Buffer>(
+        device,
+        materialEntries.size() * sizeof(GPUMaterial),
+        MTL::ResourceStorageModePrivate);
+    m_materialBuffer->GetNative()->setLabel(NS::String::string("Material Buffer", NS::UTF8StringEncoding));
+    m_materialBuffer->UpdateStaged(
+        materialEntries.data(),
+        materialEntries.size() * sizeof(GPUMaterial),
+        0,
+        commandBufferPool,
+        queue);
 }
 
 void Scene::RegisterBuffers(RenderGraph &graph) {
@@ -245,4 +469,5 @@ void Scene::RegisterBuffers(RenderGraph &graph) {
     graph.RegisterBuffer("GlobalIndexBuffer", *m_indexBuffer);
     graph.RegisterBuffer("IndexBufferInfoBuffer", *m_indexBufferInfoBuffer);
     graph.RegisterBuffer("RenderPrimitiveBuffer", *m_renderPrimitiveBuffer);
+    graph.RegisterBuffer("MaterialBuffer", *m_materialBuffer);
 }

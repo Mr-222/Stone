@@ -13,6 +13,7 @@
 #include "IndirectCommandBuffer.h"
 
 constexpr std::string kSwapchainImageName = "swapchain_image";
+constexpr std::string kSceneDepthImageName = "scene_depth";
 
 enum class RenderGraphResourceType {
     Texture,

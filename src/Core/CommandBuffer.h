@@ -21,6 +21,8 @@ public:
 
 private:
     friend class CommandBufferPool;
+    void Begin();
+
     CommandBuffer(MTL4::CommandBuffer* cmd,
                   MTL4::CommandAllocator* allocator,
                   MTL::Device* device,

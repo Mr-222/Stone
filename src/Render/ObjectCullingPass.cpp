@@ -54,6 +54,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numPrimitives) {
     icbDescriptor->setCommandTypes(MTL::IndirectCommandTypeDrawIndexed);
     icbDescriptor->setInheritBuffers(true);
     icbDescriptor->setInheritPipelineState(true);
+    icbDescriptor->setInheritDepthStencilState(true);
     m_indirectCB = std::make_unique<IndirectCommandBuffer>(device, icbDescriptor, m_numPrimitives, MTL::ResourceStorageModePrivate);
     m_indirectCB->GetNative()->setLabel(NS::String::string("Scene ICB", NS::UTF8StringEncoding));
 
@@ -160,12 +161,17 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             computeEncoder->fillBuffer(m_ICBExecutionRangeBuffer->GetNative(), NS::Range(0, m_ICBExecutionRangeBuffer->GetSize()), 0);
             computeEncoder->resetCommandsInBuffer(indirectCB, NS::Range(0, m_numPrimitives));
 
+            computeEncoder->barrierAfterEncoderStages(MTL::StageBlit, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+
             computeEncoder->setComputePipelineState(m_pipelineState);
             computeEncoder->setArgumentTable(m_argumentTable);
             NS::UInteger width = m_pipelineState->threadExecutionWidth();
             MTL::Size gridSize = MTL::Size(m_numPrimitives, 1, 1);
             MTL::Size threadGroupSize = MTL::Size(width, 1, 1);
             computeEncoder->dispatchThreads(gridSize, threadGroupSize);
+
+            computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageBlit, MTL4::VisibilityOptionDevice);
+
             computeEncoder->optimizeIndirectCommandBuffer(indirectCB, NS::Range(0, m_numPrimitives));
             computeEncoder->endEncoding();
         });

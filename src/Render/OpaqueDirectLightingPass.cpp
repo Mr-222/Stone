@@ -1,38 +1,77 @@
 #include "OpaqueDirectLightingPass.h"
 
+#include <array>
+
 #include "Core/Buffer.h"
 #include "Core/RenderGraph.h"
+#include "Core/Texture.h"
 #include "Shader/ShaderTypes.h"
 #include "Utility/Logger.h"
 #include "Utility/ShaderLibrary.h"
 
 constexpr const char* kOpaqueDirectLightingShaderLibrary = STONE_SHADER_DIR "/OpaqueDirectLighting.metallib";
 
+struct OpaqueDirectLightingVertexArgumentData {
+    MTL::GPUAddress vertices;
+    MTL::GPUAddress renderPrimitives;
+};
+
+struct OpaqueDirectLightingFragmentArgumentData {
+    MTL::GPUAddress materials;
+    std::array<MTL::ResourceID, kMaxBindlessTextureCount> textures;
+};
+
 struct OpaqueDirectLightingPassData {
     RenderGraphColorAttachment colorAttachment;
+    RenderGraphDepthAttachment depthAttachment;
     MTL::RenderPipelineState* pipelineState = nullptr;
+    MTL::DepthStencilState* depthStencilState = nullptr;
     MTL4::ArgumentTable* argumentTable = nullptr;
-    MTL::Buffer* argumentBuffer = nullptr;
+    MTL::Buffer* vertexArgumentBuffer = nullptr;
+    MTL::Buffer* fragmentArgumentBuffer = nullptr;
     RenderGraphResourceHandle frameUniformHandle;
     RenderGraphResourceHandle globalVertexBufferHandle;
     RenderGraphResourceHandle globalIndexBufferHandle;
+    RenderGraphResourceHandle renderPrimitiveBufferHandle;
+    RenderGraphResourceHandle materialBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
+    std::vector<MTL::Texture*> textures;
     int numPrimitives;
 };
 
-OpaqueDirectLightingPass::OpaqueDirectLightingPass() = default;
-
 OpaqueDirectLightingPass::~OpaqueDirectLightingPass() {
-    if (m_argumentEncoder)
-        m_argumentEncoder->release();
     if (m_argumentTable)
         m_argumentTable->release();
+    if (m_depthStencilState)
+        m_depthStencilState->release();
     if (m_pipelineState)
         m_pipelineState->release();
 }
 
-void OpaqueDirectLightingPass::Setup(MetalContext& context, const int numPrimitives) {
+void OpaqueDirectLightingPass::Setup(
+    MetalContext& context,
+    const int numPrimitives,
+    const std::vector<Texture>& textures)
+{
     m_numPrimitives = numPrimitives;
+    m_textures.reserve(textures.size());
+    for (size_t textureIndex = 0; textureIndex < textures.size(); ++textureIndex) {
+        MTL::Texture* texture = textures[textureIndex].GetNative();
+        LOG_ERROR_IF(!texture, "OpaqueDirectLighting texture {} is null", textureIndex);
+        LOG_ERROR_IF(texture->textureType() != MTL::TextureType2D,
+            "OpaqueDirectLighting texture {} has Metal texture type {}, expected MTLTextureType2D ({})",
+            textureIndex,
+            static_cast<NS::UInteger>(texture->textureType()),
+            static_cast<NS::UInteger>(MTL::TextureType2D));
+        m_textures.push_back(texture);
+    }
+
+    LOG_ERROR_IF(m_textures.empty(), "OpaqueDirectLighting requires at least the fallback texture");
+
+    LOG_ERROR_IF(m_textures.size() > kMaxBindlessTextureCount,
+        "OpaqueDirectLighting needs {} textures, but the bindless table supports {}.",
+        m_textures.size(),
+        kMaxBindlessTextureCount);
 
     MTL::Device* device = context.GetDevice();
 
@@ -44,6 +83,7 @@ void OpaqueDirectLightingPass::Setup(MetalContext& context, const int numPrimiti
     });
 
     MTL4::RenderPipelineDescriptor* pipelineDescriptor = MTL4::RenderPipelineDescriptor::alloc()->init()->autorelease();
+    pipelineDescriptor->setLabel(NS::String::string("OpaqueDirectLighting", NS::UTF8StringEncoding));
 
     MTL4::LibraryFunctionDescriptor* vertexFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "opaqueDirect_vertex");
     MTL4::LibraryFunctionDescriptor* fragmentFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "opaqueDirect_fragment");
@@ -60,17 +100,29 @@ void OpaqueDirectLightingPass::Setup(MetalContext& context, const int numPrimiti
     m_pipelineState = compiler->newRenderPipelineState(pipelineDescriptor, taskOptions, &error);
     LOG_ERROR_IF(!m_pipelineState, "Failed to create opaque direct lighting render pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    MTL::Function* vertexFunction = shaderLibrary.GetFunction("opaqueDirect_vertex");
+    MTL::DepthStencilDescriptor* depthStencilDescriptor = MTL::DepthStencilDescriptor::alloc()->init()->autorelease();
+    depthStencilDescriptor->setLabel(NS::String::string("OpaqueDirectLighting Depth State", NS::UTF8StringEncoding));
+    depthStencilDescriptor->setDepthCompareFunction(MTL::CompareFunctionLess);
+    depthStencilDescriptor->setDepthWriteEnabled(true);
+    m_depthStencilState = device->newDepthStencilState(depthStencilDescriptor);
+    LOG_ERROR_IF(!m_depthStencilState, "Failed to create opaque direct lighting depth-stencil state.");
 
-    m_argumentEncoder = vertexFunction->newArgumentEncoder(static_cast<NS::UInteger>(OpaqueDirectLightingBufferIndex::BindlessArguments));
-    LOG_ERROR_IF(!m_argumentEncoder, "Failed to create argument encoder for opaque direct lighting bindings");
-
-    m_argumentBuffer = std::make_unique<Buffer>(
+    const OpaqueDirectLightingVertexArgumentData vertexArguments{};
+    m_vertexArgumentBuffer = std::make_unique<Buffer>(
         device,
-        m_argumentEncoder->encodedLength(),
-        MTL::ResourceStorageModeShared
-    );
-    m_argumentBuffer->GetNative()->setLabel(NS::String::string("OpaqueDirectLighting Argument Buffer", NS::UTF8StringEncoding));
+        &vertexArguments,
+        sizeof(vertexArguments),
+        MTL::ResourceStorageModeShared);
+    m_vertexArgumentBuffer->GetNative()->setLabel(NS::String::string("OpaqueDirectLighting Vertex Argument Buffer", NS::UTF8StringEncoding));
+
+    const OpaqueDirectLightingFragmentArgumentData fragmentArguments{};
+    m_fragmentArgumentBuffer = std::make_unique<Buffer>(
+        device,
+        &fragmentArguments,
+        sizeof(fragmentArguments),
+        MTL::ResourceStorageModeShared);
+    m_fragmentArgumentBuffer->GetNative()->setLabel(
+        NS::String::string("OpaqueDirectLighting Fragment Argument Buffer", NS::UTF8StringEncoding));
 
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("OpaqueDirectLighting Argument Table", NS::UTF8StringEncoding));
@@ -79,16 +131,24 @@ void OpaqueDirectLightingPass::Setup(MetalContext& context, const int numPrimiti
     m_argumentTable = device->newArgumentTable(argumentTableDescriptor, &error);
     LOG_ERROR_IF(!m_argumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    m_argumentTable->setAddress(m_argumentBuffer->GetGPUAddress(), static_cast<NS::UInteger>(OpaqueDirectLightingBufferIndex::BindlessArguments));
+    m_argumentTable->setAddress(
+        m_vertexArgumentBuffer->GetGPUAddress(),
+        static_cast<NS::UInteger>(OpaqueDirectLightingBufferIndex::VertexArguments));
+    m_argumentTable->setAddress(
+        m_fragmentArgumentBuffer->GetGPUAddress(),
+        static_cast<NS::UInteger>(OpaqueDirectLightingBufferIndex::FragmentArguments));
 
     compiler->release();
 }
 
 void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
+    RenderGraphResourceHandle depthHandle = graph.DeclareTexture(kSceneDepthImageName);
     RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
     RenderGraphResourceHandle globalVertexBufferHandle = graph.DeclareBuffer("GlobalVertexBuffer");
     RenderGraphResourceHandle globalIndexBufferHandle = graph.DeclareBuffer("GlobalIndexBuffer");
+    RenderGraphResourceHandle renderPrimitiveBufferHandle = graph.DeclareBuffer("RenderPrimitiveBuffer");
+    RenderGraphResourceHandle materialBufferHandle = graph.DeclareBuffer("MaterialBuffer");
     RenderGraphResourceHandle indirectCBHandle = graph.DeclareIndirectCommandBuffer("IndirectCommandBuffer");
 
     graph.AddPass<OpaqueDirectLightingPassData>(
@@ -100,28 +160,57 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
                 .storeAction = MTL::StoreActionStore,
                 .clearColor = MTL::ClearColor::Make(0.0, 0.0, 0.0, 1.0),
             });
+            data.depthAttachment = builder.WriteDepth(depthHandle, RenderGraphDepthAttachmentDesc{
+                .loadAction = MTL::LoadActionClear,
+                .storeAction = MTL::StoreActionDontCare,
+                .clearDepth = 1.0,
+            });
             data.pipelineState = m_pipelineState;
+            data.depthStencilState = m_depthStencilState;
             data.argumentTable = m_argumentTable;
-            data.argumentBuffer = m_argumentBuffer->GetNative();
+            data.vertexArgumentBuffer = m_vertexArgumentBuffer->GetNative();
+            data.fragmentArgumentBuffer = m_fragmentArgumentBuffer->GetNative();
             data.frameUniformHandle = frameUniformHandle;
             data.globalVertexBufferHandle = globalVertexBufferHandle;
             data.globalIndexBufferHandle = globalIndexBufferHandle;
+            data.renderPrimitiveBufferHandle = renderPrimitiveBufferHandle;
+            data.materialBufferHandle = materialBufferHandle;
             data.indirectCBHandle = indirectCBHandle;
+            data.textures = m_textures;
             data.numPrimitives = m_numPrimitives;
 
             builder.ReadBuffer(frameUniformHandle);
             builder.ReadBuffer(globalVertexBufferHandle);
             builder.ReadBuffer(globalIndexBufferHandle);
+            builder.ReadBuffer(renderPrimitiveBufferHandle);
+            builder.ReadBuffer(materialBufferHandle);
             builder.ReadIndirectCommandBuffer(indirectCBHandle);
 
-            // Encode the global vertex buffer into the shader argument-buffer layout.
             MTL::Buffer* globalVertexBuffer = resources.GetBuffer(globalVertexBufferHandle);
             LOG_ERROR_IF(!globalVertexBuffer, "OpaqueDirectLighting: Failed to get global vertex buffer");
-            m_argumentEncoder->setArgumentBuffer(m_argumentBuffer->GetNative(), 0);
-            m_argumentEncoder->setBuffer(
-                globalVertexBuffer,
-                0,
-                static_cast<NS::UInteger>(OpaqueDirectLightingBindlessArgumentID::Vertices));
+
+            MTL::Buffer* renderPrimitiveBuffer = resources.GetBuffer(renderPrimitiveBufferHandle);
+            LOG_ERROR_IF(!renderPrimitiveBuffer, "OpaqueDirectLighting: Failed to get render primitive buffer");
+
+            const OpaqueDirectLightingVertexArgumentData vertexArguments {
+                .vertices = globalVertexBuffer->gpuAddress(),
+                .renderPrimitives = renderPrimitiveBuffer->gpuAddress(),
+            };
+            m_vertexArgumentBuffer->Update(&vertexArguments, sizeof(vertexArguments));
+
+            MTL::Buffer* materialBuffer = resources.GetBuffer(materialBufferHandle);
+            LOG_ERROR_IF(!materialBuffer, "OpaqueDirectLighting: Failed to get material buffer");
+
+            OpaqueDirectLightingFragmentArgumentData fragmentArguments {
+                .materials = materialBuffer->gpuAddress(),
+            };
+            for (size_t textureIndex = 0; textureIndex < fragmentArguments.textures.size(); ++textureIndex) {
+                MTL::Texture* texture = textureIndex < m_textures.size()
+                    ? m_textures[textureIndex]
+                    : m_textures.front();
+                fragmentArguments.textures[textureIndex] = texture->gpuResourceID();
+            }
+            m_fragmentArgumentBuffer->Update(&fragmentArguments, sizeof(fragmentArguments));
 
             // Bind frame uniform into the argument table
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(frameUniformHandle);
@@ -132,21 +221,44 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
             MTL::Buffer* globalVertexBuffer = resources.GetBuffer(data.globalVertexBufferHandle);
             MTL::Buffer* globalIndexBuffer = resources.GetBuffer(data.globalIndexBufferHandle);
+            MTL::Buffer* renderPrimitiveBuffer = resources.GetBuffer(data.renderPrimitiveBufferHandle);
+            MTL::Buffer* materialBuffer = resources.GetBuffer(data.materialBufferHandle);
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
 
             LOG_ERROR_IF(!globalVertexBuffer, "OpaqueDirectLighting: Failed to get global vertex buffer");
             LOG_ERROR_IF(!globalIndexBuffer, "OpaqueDirectLighting: Failed to get global index buffer");
+            LOG_ERROR_IF(!renderPrimitiveBuffer, "OpaqueDirectLighting: Failed to get render primitive buffer");
+            LOG_ERROR_IF(!materialBuffer, "OpaqueDirectLighting: Failed to get material buffer");
             LOG_ERROR_IF(!indirectCB, "OpaqueDirectLighting: Failed to get indirect command buffer");
 
             cmd.AddResource(frameUniformBuffer);
             cmd.AddResource(globalVertexBuffer);
             cmd.AddResource(globalIndexBuffer);
+            cmd.AddResource(renderPrimitiveBuffer);
+            cmd.AddResource(materialBuffer);
             cmd.AddResource(indirectCB);
-            cmd.AddResource(data.argumentBuffer);
+            cmd.AddResource(data.vertexArgumentBuffer);
+            cmd.AddResource(data.fragmentArgumentBuffer);
+            for (MTL::Texture* texture : data.textures)
+                cmd.AddResource(texture);
 
             MTL::Texture* colorTexture = resources.GetTexture(data.colorAttachment.texture);
+            MTL::Texture* depthTexture = resources.GetTexture(data.depthAttachment.texture);
             LOG_ERROR_IF(!colorTexture, "OpaqueDirectLighting: No color target.");
+            LOG_ERROR_IF(!depthTexture, "OpaqueDirectLighting: No depth target.");
+            LOG_ERROR_IF(depthTexture->pixelFormat() != MTL::PixelFormatDepth32Float,
+                "OpaqueDirectLighting: Depth target has pixel format {}, expected Depth32Float ({}).",
+                static_cast<NS::UInteger>(depthTexture->pixelFormat()),
+                static_cast<NS::UInteger>(MTL::PixelFormatDepth32Float));
+            LOG_ERROR_IF(
+                depthTexture->width() != colorTexture->width() || depthTexture->height() != colorTexture->height(),
+                "OpaqueDirectLighting: Depth target size {}x{} does not match color target size {}x{}.",
+                depthTexture->width(),
+                depthTexture->height(),
+                colorTexture->width(),
+                colorTexture->height());
             LOG_ERROR_IF(!data.pipelineState, "OpaqueDirectLighting: Pipeline state is null.");
+            LOG_ERROR_IF(!data.depthStencilState, "OpaqueDirectLighting: Depth-stencil state is null.");
             LOG_ERROR_IF(!data.argumentTable, "OpaqueDirectLighting: Argument table is null.");
 
             MTL4::RenderPassDescriptor* passDescriptor = MTL4::RenderPassDescriptor::alloc()->init()->autorelease();
@@ -155,6 +267,12 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             colorAttachment->setLoadAction(data.colorAttachment.desc.loadAction);
             colorAttachment->setClearColor(data.colorAttachment.desc.clearColor);
             colorAttachment->setStoreAction(data.colorAttachment.desc.storeAction);
+
+            MTL::RenderPassDepthAttachmentDescriptor* depthAttachment = passDescriptor->depthAttachment();
+            depthAttachment->setTexture(depthTexture);
+            depthAttachment->setLoadAction(data.depthAttachment.desc.loadAction);
+            depthAttachment->setStoreAction(data.depthAttachment.desc.storeAction);
+            depthAttachment->setClearDepth(data.depthAttachment.desc.clearDepth);
 
             MTL4::RenderCommandEncoder* renderEncoder = cmd.BeginRenderPass(passDescriptor);
             LOG_ERROR_IF(!renderEncoder, "OpaqueDirectLighting: Failed to create render command encoder");
@@ -169,10 +287,11 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             };
 
             renderEncoder->setRenderPipelineState(data.pipelineState);
+            renderEncoder->setDepthStencilState(data.depthStencilState);
             renderEncoder->setViewport(viewport);
             renderEncoder->setCullMode(MTL::CullModeBack);
             renderEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
-            renderEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex);
+            renderEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex | MTL::RenderStageFragment);
 
             renderEncoder->executeCommandsInBuffer(indirectCB, NS::Range(0, data.numPrimitives));
 

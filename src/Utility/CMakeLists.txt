@@ -1,4 +1,5 @@
 add_library(Utility STATIC
+    ImageLoader.cpp
     Logger.cpp
     ShaderLibrary.cpp
 )

@@ -114,20 +114,21 @@ void RenderGraph::Execute(MTL4::CommandQueue* renderQueue, MTL4::CommandQueue* c
     LOG_ERROR_IF(!renderQueue, "RenderGraph execute requires a valid render command queue.");
     LOG_ERROR_IF(!computeQueue, "RenderGraph execute requires a valid compute command queue.");
 
-    const uint64_t frameIndex = m_metalContext->GetCurrentFrameIndex();
+    // MTLEvent starts at 0, so frame 0 should use 1 as signal value
+    const uint64_t passEventValue = m_metalContext->GetCurrentFrameIndex() + 1;
 
     for (const auto& name : m_executionOrder) {
         auto& pass = m_passes.at(name);
         auto queue = pass->IsComputePass ? computeQueue : renderQueue;
 
         for (const MTL::Event* waitEvent : pass->GetWaitEventsList()) {
-            queue->wait(waitEvent, frameIndex);
+            queue->wait(waitEvent, passEventValue);
         }
 
         auto commandBuffer = m_commandBufferPool->Acquire();
         pass->Execute(m_resources, commandBuffer);
         commandBuffer.SubmitTo(queue);
 
-        queue->signalEvent(pass->GetSignalEvent(), frameIndex);
+        queue->signalEvent(pass->GetSignalEvent(), passEventValue);
     }
 }

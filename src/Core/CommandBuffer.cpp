@@ -59,19 +59,20 @@ void CommandBuffer::AddResource(const MTL::Allocation* allocation) {
     m_residencySet->addAllocation(allocation);
 }
 
-MTL4::RenderCommandEncoder* CommandBuffer::BeginRenderPass(MTL4::RenderPassDescriptor* desc) {
+void CommandBuffer::Begin() {
     if (!m_hasBegun) {
         m_hasBegun = true;
         m_commandBuffer->beginCommandBuffer(m_allocator);
     }
+}
+
+MTL4::RenderCommandEncoder* CommandBuffer::BeginRenderPass(MTL4::RenderPassDescriptor* desc) {
+    Begin();
     return m_commandBuffer->renderCommandEncoder(desc);
 }
 
 MTL4::ComputeCommandEncoder* CommandBuffer::BeginComputePass() {
-    if (!m_hasBegun) {
-        m_hasBegun = true;
-        m_commandBuffer->beginCommandBuffer(m_allocator);
-    }
+    Begin();
     return m_commandBuffer->computeCommandEncoder();
 }
 

@@ -30,6 +30,7 @@ void Renderer::Setup() {
     m_metalContext = std::make_shared<MetalContext>(m_window->GetCAMetalLayer());
     m_commandBufferPool = std::make_shared<CommandBufferPool>(64, *m_metalContext);
     m_renderGraph = std::make_unique<RenderGraph>(m_metalContext, m_commandBufferPool);
+    m_depthTextures.resize(MAX_FRAMES_IN_FLIGHT);
 
     CameraConfig config = {
         .position = glm::vec3(0.0f, 0.0f, -3.0f),
@@ -51,7 +52,11 @@ void Renderer::Setup() {
     m_scene->RegisterBuffers(*m_renderGraph);
 
     m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->renderPrimitives.size());
-    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->renderPrimitives.size());
+    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>(
+        "OpaqueDirectLighting",
+        *m_metalContext,
+        m_scene->renderPrimitives.size(),
+        m_scene->GetTextures());
 
     m_renderGraph->SetDependencyGraph({{
         "OpaqueDirectLighting", { "ObjectCulling" }
@@ -136,8 +141,28 @@ void Renderer::Run() {
 
         m_metalContext->BeginFrame();
 
-        Texture backbuffer = Texture::Borrowed(m_metalContext->GetCurrentDrawable()->texture());
+        MTL::Texture* backbufferTexture = m_metalContext->GetCurrentDrawable()->texture();
+        Texture backbuffer = Texture::Borrowed(backbufferTexture);
         m_renderGraph->RegisterTexture(kSwapchainImageName, backbuffer);
+
+        const size_t frameSlot = m_metalContext->GetCurrentFrameIndex() % MAX_FRAMES_IN_FLIGHT;
+        std::unique_ptr<Texture>& depthTexture = m_depthTextures[frameSlot];
+        if (!depthTexture ||
+            depthTexture->GetWidth() != backbufferTexture->width() ||
+            depthTexture->GetHeight() != backbufferTexture->height())
+        {
+            MTL::TextureDescriptor* depthDescriptor = MTL::TextureDescriptor::texture2DDescriptor(
+                MTL::PixelFormatDepth32Float,
+                backbufferTexture->width(),
+                backbufferTexture->height(),
+                false);
+            depthDescriptor->setStorageMode(MTL::StorageModeMemoryless);
+            depthDescriptor->setUsage(MTL::TextureUsageRenderTarget);
+
+            depthTexture = std::make_unique<Texture>(m_metalContext->GetDevice(), depthDescriptor);
+            depthTexture->GetNative()->setLabel(NS::String::string("Scene Depth", NS::UTF8StringEncoding));
+        }
+        m_renderGraph->RegisterTexture(kSceneDepthImageName, *depthTexture);
 
         FrameUniform frameUniform = {
             .viewProjection = m_camera->GetProjectionMatrix() * m_camera->GetViewMatrix()

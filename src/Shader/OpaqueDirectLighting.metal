@@ -2,20 +2,35 @@
 
 struct OpaqueVertexOut {
     float4 position [[position]];
+    float2 uv;
+    uint materialIndex [[flat]];
 };
 
 vertex OpaqueVertexOut opaqueDirect_vertex(
     uint vertexID [[vertex_id]],
-    constant OpaqueDirectLightingBindlessArguments& args [[buffer(OpaqueDirectLightingBufferIndex::BindlessArguments)]],
+    uint primitiveID [[instance_id]],
+    constant OpaqueDirectLightingVertexArguments& args [[buffer(OpaqueDirectLightingBufferIndex::VertexArguments)]],
     constant FrameUniform& frame [[buffer(OpaqueDirectLightingBufferIndex::FrameUniform)]])
 {
     OpaqueVertexOut out;
-    float3 pos = args.vertices[vertexID].position;
-    out.position = frame.viewProjection * float4(pos, 1.0);
+    const device GPUVertex& gpuVertex = args.vertices[vertexID];
+    const device GPURenderPrimitive& primitive = args.renderPrimitives[primitiveID];
+    out.position = frame.viewProjection * primitive.worldMat * float4(gpuVertex.position, 1.0);
+    out.uv = gpuVertex.uv;
+    out.materialIndex = primitive.materialIndex;
     return out;
 }
 
-fragment float4 opaqueDirect_fragment(OpaqueVertexOut in [[stage_in]])
+fragment float4 opaqueDirect_fragment(
+    OpaqueVertexOut in [[stage_in]],
+    device OpaqueDirectLightingFragmentArguments& args [[buffer(OpaqueDirectLightingBufferIndex::FragmentArguments)]])
 {
-    return float4(1.0, 1.0, 1.0, 1.0);
+    constexpr sampler baseColorSampler(
+        coord::normalized,
+        address::clamp_to_edge,
+        filter::linear,
+        mip_filter::linear);
+
+    const device GPUMaterial& material = args.materials[in.materialIndex];
+    return args.textures[material.baseColorTextureIndex].sample(baseColorSampler, in.uv) * material.baseColorFactor;
 }

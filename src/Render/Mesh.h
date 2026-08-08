@@ -19,6 +19,13 @@ struct SubMesh
     uint32_t firstIndex;
     uint32_t indexCount;
     uint32_t vertexOffset;
+    uint32_t materialIndex;
+};
+
+struct SceneMaterial
+{
+    glm::vec4 baseColorFactor = glm::vec4(1.0f);
+    uint32_t baseColorTextureIndex = 0;
 };
 
 struct Mesh

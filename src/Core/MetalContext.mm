@@ -43,7 +43,7 @@ void MetalContext::BeginFrame() {
     m_currentDrawable = m_swapchain->nextDrawable();
     LOG_ERROR_IF(!m_currentDrawable, "No more drawables available!");
 
-    const uint32_t bufferIndex = static_cast<uint32_t>(m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT);
+    const uint32_t bufferIndex = GetCurrentFrameSlot();
     MTL::ResidencySet* residencySet = m_frameResidencySets[bufferIndex].get();
     if (residencySet->allocationCount() > 0) {
         residencySet->removeAllAllocations();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 class MetalContext;
 class Window;
@@ -11,6 +12,7 @@ class OpaqueDirectLightingPass;
 class Scene;
 class Camera;
 class Buffer;
+class Texture;
 namespace MTL4 {
     class CommandBuffer;
 }
@@ -36,7 +38,8 @@ private:
     std::unique_ptr<Scene> m_scene;
 
     std::unique_ptr<Camera> m_camera;
-    std::unique_ptr<Buffer> m_frameUniform;
+    std::vector<std::unique_ptr<Buffer>> m_frameUniforms;
+    std::vector<std::unique_ptr<Texture>> m_depthTextures;
 
     bool m_firstMouse = true;
     double m_lastX;

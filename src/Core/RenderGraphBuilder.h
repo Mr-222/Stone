@@ -27,6 +27,17 @@ struct RenderGraphColorAttachment {
     RenderGraphColorAttachmentDesc desc;
 };
 
+struct RenderGraphDepthAttachmentDesc {
+    MTL::LoadAction loadAction;
+    MTL::StoreAction storeAction;
+    double clearDepth;
+};
+
+struct RenderGraphDepthAttachment {
+    RenderGraphResourceHandle texture;
+    RenderGraphDepthAttachmentDesc desc;
+};
+
 class RenderGraphBuilder {
 public:
     void ReadTexture(RenderGraphResourceHandle texture) {
@@ -77,6 +88,19 @@ public:
         });
 
         return RenderGraphColorAttachment{
+            .texture = texture,
+            .desc = desc,
+        };
+    }
+
+    RenderGraphDepthAttachment WriteDepth(RenderGraphResourceHandle texture, const RenderGraphDepthAttachmentDesc& desc) {
+        m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = texture,
+            .resourceType = RenderGraphResourceType::Texture,
+            .accessType = RenderGraphResourceAccessType::Write,
+        });
+
+        return RenderGraphDepthAttachment{
             .texture = texture,
             .desc = desc,
         };

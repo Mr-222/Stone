@@ -4,6 +4,8 @@
 #include <metal_stdlib>
 using namespace metal;
 
+constant constexpr uint32_t kMaxBindlessTextureCount = 1024;
+
 struct FrameUniform {
     float4x4 viewProjection;
 };
@@ -12,12 +14,22 @@ struct GPURenderPrimitive {
     uint32_t baseVertex;
     uint32_t firstIndex;
     uint32_t indexCount;
-    uint32_t pad0;
+    uint32_t materialIndex;
     float4x4 worldMat;
+};
+
+struct GPUMaterial {
+    float4 baseColorFactor;
+    uint32_t baseColorTextureIndex;
+    uint32_t pad0;
+    uint32_t pad1;
+    uint32_t pad2;
 };
 #else
 #include <cstdint>
 #include <glm/glm.hpp>
+
+constexpr uint32_t kMaxBindlessTextureCount = 1024;
 
 struct FrameUniform {
     glm::mat4 viewProjection;
@@ -27,8 +39,16 @@ struct GPURenderPrimitive {
     uint32_t baseVertex;
     uint32_t firstIndex;
     uint32_t indexCount;
-    uint32_t pad0;
+    uint32_t materialIndex;
     glm::mat4 worldMat;
+};
+
+struct GPUMaterial {
+    glm::vec4 baseColorFactor;
+    uint32_t baseColorTextureIndex;
+    uint32_t pad0;
+    uint32_t pad1;
+    uint32_t pad2;
 };
 #endif
 
@@ -81,14 +101,22 @@ enum class TriangleBindlessArgumentID {
 };
 
 enum class OpaqueDirectLightingBufferIndex {
-    BindlessArguments,
+    VertexArguments,
     FrameUniform,
+    FragmentArguments,
     MaxBufferBindCount,
 };
 
-enum class OpaqueDirectLightingBindlessArgumentID {
+enum class OpaqueDirectLightingVertexArgumentID {
     Vertices,
+    RenderPrimitives,
     MaxArgumentID,
+};
+
+enum class OpaqueDirectLightingFragmentArgumentID {
+    Materials,
+    Textures,
+    MaxArgumentID = 1 + kMaxBindlessTextureCount,
 };
 
 #ifdef __METAL_VERSION__
@@ -117,7 +145,14 @@ struct TriangleBindlessArguments {
     const device float4* colors [[id(TriangleBindlessArgumentID::Colors)]];
 };
 
-struct OpaqueDirectLightingBindlessArguments {
-    const device GPUVertex* vertices [[id(OpaqueDirectLightingBindlessArgumentID::Vertices)]];
+struct OpaqueDirectLightingVertexArguments {
+    const device GPUVertex* vertices;
+    const device GPURenderPrimitive* renderPrimitives;
 };
+
+struct OpaqueDirectLightingFragmentArguments {
+    const device GPUMaterial* materials [[id(OpaqueDirectLightingFragmentArgumentID::Materials)]];
+    array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(OpaqueDirectLightingFragmentArgumentID::Textures)]];
+};
+
 #endif

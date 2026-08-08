@@ -25,14 +25,18 @@ public:
     static constexpr bool IsCompute = true;
 
 private:
+    struct FrameResources {
+        std::unique_ptr<IndirectCommandBuffer> indirectCB;
+        std::unique_ptr<Buffer> visibilityBuffer;
+        std::unique_ptr<Buffer> executionRangeBuffer;
+        std::unique_ptr<Buffer> icbArgumentBuffer;
+    };
+
     MTL::ComputePipelineState* m_pipelineState = nullptr;
     MTL4::ArgumentTable* m_argumentTable = nullptr;
-    std::unique_ptr<IndirectCommandBuffer> m_indirectCB;
 
-    std::unique_ptr<Buffer> m_visibilityBuffer;
     std::unique_ptr<Buffer> m_cullingParamsBuffer;
-    std::unique_ptr<Buffer> m_ICBExecutionRangeBuffer;
-    std::unique_ptr<Buffer> m_icbArgumentBuffer;
+    std::vector<FrameResources> m_frameResources;
 
     int m_numPrimitives;
 };

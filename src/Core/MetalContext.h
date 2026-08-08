@@ -18,11 +18,13 @@ public:
 
     MTL::Device* GetDevice() const { return m_device; }
     CA::MetalDrawable* GetCurrentDrawable() const { return m_currentDrawable; }
-    MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT]; }
-    MTL::ResidencySet* GetCurrentFrameResidencySet() const { return m_frameResidencySets[m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT].get(); }
+    MTL4::CommandAllocator* GetCurrentAllocator() const { return m_commandAllocators[GetCurrentFrameSlot()]; }
+    MTL::ResidencySet* GetCurrentFrameResidencySet() const { return m_frameResidencySets[GetCurrentFrameSlot()].get(); }
     MTL4::CommandQueue* GetRenderCommandQueue() const { return m_renderQueue; }
     MTL4::CommandQueue* GetComputeCommandQueue() const { return m_computeQueue; }
     uint64_t GetCurrentFrameIndex() const { return m_currentFrameIndex; }
+    uint32_t GetCurrentFrameSlot() const { return static_cast<uint32_t>(m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT); }
+    uint32_t GetFrameSlotCount() const { return MAX_FRAMES_IN_FLIGHT; }
 
 private:
     MTL::Device* m_device;

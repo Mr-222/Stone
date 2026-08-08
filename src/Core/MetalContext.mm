@@ -40,16 +40,10 @@ void MetalContext::BeginFrame() {
     // Take a token. Block the CPU if GPU is 3 frames behind.
     m_frameBoundarySemaphore.acquire();
 
-    // Object culling rewrites a single shared ICB and its execution buffers.
-    // Do not let the next frame's compute work reset them until the previous
-    // frame's render queue has finished consuming them.
-    if (m_currentFrameIndex > 0)
-        m_computeQueue->wait(m_frameEvent, m_currentFrameIndex);
-
     m_currentDrawable = m_swapchain->nextDrawable();
     LOG_ERROR_IF(!m_currentDrawable, "No more drawables available!");
 
-    const uint32_t bufferIndex = static_cast<uint32_t>(m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT);
+    const uint32_t bufferIndex = GetCurrentFrameSlot();
     MTL::ResidencySet* residencySet = m_frameResidencySets[bufferIndex].get();
     if (residencySet->allocationCount() > 0) {
         residencySet->removeAllAllocations();

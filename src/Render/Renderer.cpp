@@ -30,7 +30,8 @@ void Renderer::Setup() {
     m_metalContext = std::make_shared<MetalContext>(m_window->GetCAMetalLayer());
     m_commandBufferPool = std::make_shared<CommandBufferPool>(64, *m_metalContext);
     m_renderGraph = std::make_unique<RenderGraph>(m_metalContext, m_commandBufferPool);
-    m_depthTextures.resize(MAX_FRAMES_IN_FLIGHT);
+    const uint32_t frameSlotCount = m_metalContext->GetFrameSlotCount();
+    m_depthTextures.resize(frameSlotCount);
 
     CameraConfig config = {
         .position = glm::vec3(0.0f, 0.0f, -3.0f),
@@ -42,9 +43,14 @@ void Renderer::Setup() {
         .farPlane = 100.0f
     };
     m_camera = std::make_unique<Camera>(config);
-    m_frameUniform = std::make_unique<Buffer>(m_metalContext->GetDevice(), sizeof(FrameUniform),
-                        MTL::ResourceStorageModeShared);
-    m_renderGraph->RegisterBuffer("frameUniform", *m_frameUniform);
+    m_frameUniforms.resize(frameSlotCount);
+    for (uint32_t frameSlot = 0; frameSlot < m_frameUniforms.size(); ++frameSlot) {
+        m_frameUniforms[frameSlot] = std::make_unique<Buffer>(
+            m_metalContext->GetDevice(),
+            sizeof(FrameUniform),
+            MTL::ResourceStorageModeShared);
+        m_renderGraph->RegisterFrameLocalBuffer("frameUniform", frameSlot, *m_frameUniforms[frameSlot]);
+    }
 
     m_scene = std::make_unique<Scene>();
     m_scene->LoadGltf("./Models/FlightHelmet/glTF/FlightHelmet.gltf");
@@ -141,11 +147,13 @@ void Renderer::Run() {
 
         m_metalContext->BeginFrame();
 
+        // register frame buffer
         MTL::Texture* backbufferTexture = m_metalContext->GetCurrentDrawable()->texture();
         Texture backbuffer = Texture::Borrowed(backbufferTexture);
         m_renderGraph->RegisterTexture(kSwapchainImageName, backbuffer);
 
-        const size_t frameSlot = m_metalContext->GetCurrentFrameIndex() % MAX_FRAMES_IN_FLIGHT;
+        // register depth buffer
+        const uint32_t frameSlot = m_metalContext->GetCurrentFrameSlot();
         std::unique_ptr<Texture>& depthTexture = m_depthTextures[frameSlot];
         if (!depthTexture ||
             depthTexture->GetWidth() != backbufferTexture->width() ||
@@ -162,12 +170,12 @@ void Renderer::Run() {
             depthTexture = std::make_unique<Texture>(m_metalContext->GetDevice(), depthDescriptor);
             depthTexture->GetNative()->setLabel(NS::String::string("Scene Depth", NS::UTF8StringEncoding));
         }
-        m_renderGraph->RegisterTexture(kSceneDepthImageName, *depthTexture);
+        m_renderGraph->RegisterFrameLocalTexture(kSceneDepthImageName, frameSlot, *depthTexture);
 
         FrameUniform frameUniform = {
             .viewProjection = m_camera->GetProjectionMatrix() * m_camera->GetViewMatrix()
         };
-        m_frameUniform->Update(&frameUniform, sizeof(FrameUniform));
+        m_frameUniforms[frameSlot]->Update(&frameUniform, sizeof(FrameUniform));
 
         DoRender();
 

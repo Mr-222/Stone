@@ -5,7 +5,9 @@
 #include "Utility/Logger.h"
 
 RenderGraph::RenderGraph(std::shared_ptr<MetalContext> metalContext, std::shared_ptr<CommandBufferPool> commandBufferPool)
-    : m_metalContext(std::move(metalContext)), m_commandBufferPool(std::move(commandBufferPool))
+    : m_resources(metalContext->GetFrameSlotCount())
+    , m_metalContext(std::move(metalContext))
+    , m_commandBufferPool(std::move(commandBufferPool))
     {}
 
 RenderGraphResourceHandle RenderGraph::DeclareTexture(const std::string& name) {
@@ -16,6 +18,14 @@ RenderGraphResourceHandle RenderGraph::RegisterTexture(const std::string& name, 
     return m_resources.RegisterTexture(name, texture);
 }
 
+RenderGraphResourceHandle RenderGraph::RegisterFrameLocalTexture(
+    const std::string& name,
+    const uint32_t frameSlot,
+    const Texture& texture)
+{
+    return m_resources.RegisterFrameLocalTexture(name, frameSlot, texture);
+}
+
 RenderGraphResourceHandle RenderGraph::DeclareBuffer(const std::string &name) {
     return m_resources.DeclareBuffer(name);
 }
@@ -24,12 +34,28 @@ RenderGraphResourceHandle RenderGraph::RegisterBuffer(const std::string &name, c
     return m_resources.RegisterBuffer(name, buffer);
 }
 
+RenderGraphResourceHandle RenderGraph::RegisterFrameLocalBuffer(
+    const std::string& name,
+    const uint32_t frameSlot,
+    const Buffer& buffer)
+{
+    return m_resources.RegisterFrameLocalBuffer(name, frameSlot, buffer);
+}
+
 RenderGraphResourceHandle RenderGraph::DeclareIndirectCommandBuffer(const std::string& name) {
     return m_resources.DeclareIndirectCommandBuffer(name);
 }
 
 RenderGraphResourceHandle RenderGraph::RegisterIndirectCommandBuffer(const std::string& name, const IndirectCommandBuffer& indirectCB) {
     return m_resources.RegisterIndirectCommandBuffer(name, indirectCB);
+}
+
+RenderGraphResourceHandle RenderGraph::RegisterFrameLocalIndirectCommandBuffer(
+    const std::string& name,
+    const uint32_t frameSlot,
+    const IndirectCommandBuffer& indirectCB)
+{
+    return m_resources.RegisterFrameLocalIndirectCommandBuffer(name, frameSlot, indirectCB);
 }
 
 void RenderGraph::SetDependencyGraph(const std::unordered_map<std::string, std::vector<std::string>>& dependencies) {
@@ -116,6 +142,7 @@ void RenderGraph::Execute(MTL4::CommandQueue* renderQueue, MTL4::CommandQueue* c
 
     // MTLEvent starts at 0, so frame 0 should use 1 as signal value
     const uint64_t passEventValue = m_metalContext->GetCurrentFrameIndex() + 1;
+    m_resources.SetCurrentFrameSlot(m_metalContext->GetCurrentFrameSlot());
 
     for (const auto& name : m_executionOrder) {
         auto& pass = m_passes.at(name);

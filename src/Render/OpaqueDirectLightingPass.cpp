@@ -211,11 +211,6 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
                 fragmentArguments.textures[textureIndex] = texture->gpuResourceID();
             }
             m_fragmentArgumentBuffer->Update(&fragmentArguments, sizeof(fragmentArguments));
-
-            // Bind frame uniform into the argument table
-            MTL::Buffer* frameUniformBuffer = resources.GetBuffer(frameUniformHandle);
-            LOG_ERROR_IF(!frameUniformBuffer, "OpaqueDirectLighting: Failed to get frame uniform buffer");
-            data.argumentTable->setAddress(frameUniformBuffer->gpuAddress(), static_cast<NS::UInteger>(OpaqueDirectLightingBufferIndex::FrameUniform));
         },
         [](const OpaqueDirectLightingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
@@ -225,11 +220,16 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* materialBuffer = resources.GetBuffer(data.materialBufferHandle);
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
 
+            LOG_ERROR_IF(!frameUniformBuffer, "OpaqueDirectLighting: Failed to get frame uniform buffer");
             LOG_ERROR_IF(!globalVertexBuffer, "OpaqueDirectLighting: Failed to get global vertex buffer");
             LOG_ERROR_IF(!globalIndexBuffer, "OpaqueDirectLighting: Failed to get global index buffer");
             LOG_ERROR_IF(!renderPrimitiveBuffer, "OpaqueDirectLighting: Failed to get render primitive buffer");
             LOG_ERROR_IF(!materialBuffer, "OpaqueDirectLighting: Failed to get material buffer");
             LOG_ERROR_IF(!indirectCB, "OpaqueDirectLighting: Failed to get indirect command buffer");
+
+            data.argumentTable->setAddress(
+                frameUniformBuffer->gpuAddress(),
+                static_cast<NS::UInteger>(OpaqueDirectLightingBufferIndex::FrameUniform));
 
             cmd.AddResource(frameUniformBuffer);
             cmd.AddResource(globalVertexBuffer);

@@ -31,12 +31,18 @@ public:
 
     RenderGraphResourceHandle DeclareTexture(const std::string& name);
     RenderGraphResourceHandle RegisterTexture(const std::string& name, const Texture& texture);
+    RenderGraphResourceHandle RegisterFrameLocalTexture(const std::string& name, uint32_t frameSlot, const Texture& texture);
 
     RenderGraphResourceHandle DeclareBuffer(const std::string& name);
     RenderGraphResourceHandle RegisterBuffer(const std::string& name, const Buffer& buffer);
+    RenderGraphResourceHandle RegisterFrameLocalBuffer(const std::string& name, uint32_t frameSlot, const Buffer& buffer);
 
     RenderGraphResourceHandle DeclareIndirectCommandBuffer(const std::string& name);
     RenderGraphResourceHandle RegisterIndirectCommandBuffer(const std::string& name, const IndirectCommandBuffer& indirectCB);
+    RenderGraphResourceHandle RegisterFrameLocalIndirectCommandBuffer(
+        const std::string& name,
+        uint32_t frameSlot,
+        const IndirectCommandBuffer& indirectCB);
 
     template<typename PassData>
     void AddPass(

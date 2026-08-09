@@ -1,5 +1,8 @@
 #include "MetalContext.h"
 
+#import <QuartzCore/CAMetalLayer.h>
+#include <CoreGraphics/CGColorSpace.h>
+
 #include "Utility/Logger.h"
 #include "CommandBufferPool.h"
 
@@ -29,11 +32,24 @@ MetalContext::MetalContext(CA::MetalLayer* metalLayer): m_currentFrameIndex(0), 
     }
 
     m_swapchain = metalLayer;
+    CAMetalLayer* cocoaMetalLayer = (__bridge CAMetalLayer*)m_swapchain;
+    cocoaMetalLayer.wantsExtendedDynamicRangeContent = YES;
+
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
+    LOG_WARN_IF(!colorSpace, "Failed to create extended linear sRGB color space for HDR swapchain.");
+
     m_swapchain->setDevice(m_device);
-    m_swapchain->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+    m_swapchain->setPixelFormat(kSwapchainPixelFormat);
+    if (colorSpace) {
+        m_swapchain->setColorspace(colorSpace);
+    }
     m_swapchain->setFramebufferOnly(true);
     m_swapchain->setMaximumDrawableCount(MAX_FRAMES_IN_FLIGHT);
     m_renderQueue->addResidencySet(m_swapchain->residencySet());
+
+    if (colorSpace) {
+        CGColorSpaceRelease(colorSpace);
+    }
 }
 
 void MetalContext::BeginFrame() {

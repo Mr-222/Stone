@@ -29,6 +29,7 @@ target_link_libraries(Core PUBLIC
         "-framework Metal"
         "-framework Foundation"
         "-framework QuartzCore"
+        "-framework CoreGraphics"
         "-framework AppKit"
         "-framework Cocoa"
 )

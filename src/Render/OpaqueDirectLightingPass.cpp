@@ -90,7 +90,7 @@ void OpaqueDirectLightingPass::Setup(
 
     pipelineDescriptor->setVertexFunctionDescriptor(vertexFunc);
     pipelineDescriptor->setFragmentFunctionDescriptor(fragmentFunc);
-    pipelineDescriptor->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+    pipelineDescriptor->colorAttachments()->object(0)->setPixelFormat(context.GetSwapchainPixelFormat());
     pipelineDescriptor->setInputPrimitiveTopology(MTL::PrimitiveTopologyClassTriangle);
     pipelineDescriptor->setSupportIndirectCommandBuffers(MTL4::IndirectCommandBufferSupportStateEnabled);
 

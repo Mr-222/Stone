@@ -25,7 +25,10 @@ struct SubMesh
 struct SceneMaterial
 {
     glm::vec4 baseColorFactor = glm::vec4(1.0f);
+    float metallicFactor = 1.0f;
+    float roughnessFactor = 1.0f;
     uint32_t baseColorTextureIndex = 0;
+    uint32_t metallicRoughnessTextureIndex = 0;
 };
 
 struct Mesh

@@ -1,6 +1,8 @@
 #include "Scene.h"
 
+#include <array>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <span>
 #include <type_traits>
@@ -8,6 +10,7 @@
 #include <fastgltf/core.hpp>
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include "Core/CommandBuffer.h"
 #include "Shader/ShaderTypes.h"
@@ -122,8 +125,20 @@ glm::mat4 ToGlm(const fastgltf::math::fmat4x4& matrix) {
 
 Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
     Mesh outputMesh;
+    const auto defaultMaterialIndex = static_cast<uint32_t>(asset.materials.size());
 
     for (auto it = mesh.primitives.begin(); it != mesh.primitives.end(); ++it) {
+        if (it->materialIndex.has_value()) {
+            const fastgltf::Material& material = asset.materials[it->materialIndex.value()];
+            const bool hasTransmission = material.transmission && material.transmission->transmissionFactor > 0.0f;
+
+            // TODO: BLEND/KHR_materials_transmission materials to a transparent pass.
+            if (material.alphaMode != fastgltf::AlphaMode::Opaque || hasTransmission) {
+                LOG_WARN("Skipping non-opaque glTF material {} until its render path is implemented.", it->materialIndex.value());
+                continue;
+            }
+        }
+
         auto* positionIt = it->findAttribute("POSITION");
         const bool hasPosition = positionIt != it->attributes.end();
         LOG_ERROR_IF(!hasPosition, "Failed to find position attribute");
@@ -199,7 +214,9 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
                 static_cast<uint32_t>(indexOffset),
                 static_cast<uint32_t>(indexAccessor.count),
                 0,
-                it->materialIndex.has_value() ? static_cast<uint32_t>(it->materialIndex.value()) : 0,
+                it->materialIndex.has_value()
+                    ? static_cast<uint32_t>(it->materialIndex.value())
+                    : defaultMaterialIndex,
             });
         }
     }
@@ -234,7 +251,9 @@ void Scene::LoadGltf(std::filesystem::path path) {
 
     LOG_INFO("Loading {}", path.string());
 
-    fastgltf::Parser parser;
+    fastgltf::Parser parser(
+        fastgltf::Extensions::KHR_materials_transmission |
+        fastgltf::Extensions::KHR_texture_transform);
     constexpr auto gltfOptions =
         fastgltf::Options::DontRequireValidAssetMember |
         fastgltf::Options::AllowDouble |
@@ -252,32 +271,54 @@ void Scene::LoadGltf(std::filesystem::path path) {
     for (const fastgltf::Image& image : asset->images)
         m_encodedImages.emplace_back(CopyImageBytes(asset.get(), image));
 
+    // One glTF texture may legally be used for both color and data. Keep a
+    // separate physical/bindless entry for each transfer function so data
+    // textures are never accidentally sampled through an sRGB view.
+    std::vector<std::array<std::optional<uint32_t>, 2>> resolvedTextureIndices(asset->textures.size());
     m_textureSources.reserve(asset->textures.size());
-    for (size_t textureIndex = 0; textureIndex < asset->textures.size(); ++textureIndex) {
-        const fastgltf::Texture& texture = asset->textures[textureIndex];
+    const auto resolveTextureIndex = [this, &asset, &resolvedTextureIndices](
+        const size_t textureIndex,
+        const bool sRGB) -> uint32_t
+    {
+        LOG_ERROR_IF(textureIndex >= asset->textures.size(),
+            "glTF references invalid texture {}.", textureIndex);
 
+        std::optional<uint32_t>& resolvedIndex = resolvedTextureIndices[textureIndex][sRGB ? 1 : 0];
+        if (resolvedIndex.has_value())
+            return resolvedIndex.value();
+
+        const fastgltf::Texture& texture = asset->textures[textureIndex];
         LOG_ERROR_IF(!texture.imageIndex.has_value(), "glTF texture {} does not reference a supported image.", textureIndex);
-        LOG_ERROR_IF(texture.imageIndex.value() >= asset->images.size(), "glTF texture {} references invalid image {}.", textureIndex, texture.imageIndex.value());
+        LOG_ERROR_IF(texture.imageIndex.value() >= asset->images.size(),
+            "glTF texture {} references invalid image {}.",
+            textureIndex,
+            texture.imageIndex.value());
 
         std::string name(texture.name.begin(), texture.name.end());
         if (name.empty())
             name = "Scene Texture " + std::to_string(textureIndex + 1);
+        name += sRGB ? " [sRGB]" : " [Linear]";
 
         m_textureSources.push_back(TextureSource{
             static_cast<uint32_t>(texture.imageIndex.value()),
-            false,
+            sRGB,
             std::move(name),
         });
-    }
+        resolvedIndex = static_cast<uint32_t>(m_textureSources.size()); // slot 0 is fallback white
+        return resolvedIndex.value();
+    };
 
-    materials.reserve(asset->materials.size());
+    materials.reserve(asset->materials.size() + 1);
     for (size_t materialIndex = 0; materialIndex < asset->materials.size(); ++materialIndex) {
         const fastgltf::Material& gltfMaterial = asset->materials[materialIndex];
         const auto& factor = gltfMaterial.pbrData.baseColorFactor;
 
         SceneMaterial material{
             .baseColorFactor = glm::vec4(factor.x(), factor.y(), factor.z(), factor.w()),
+            .metallicFactor = static_cast<float>(gltfMaterial.pbrData.metallicFactor),
+            .roughnessFactor = static_cast<float>(gltfMaterial.pbrData.roughnessFactor),
             .baseColorTextureIndex = 0,
+            .metallicRoughnessTextureIndex = 0,
         };
 
         if (gltfMaterial.pbrData.baseColorTexture.has_value()) {
@@ -294,12 +335,29 @@ void Scene::LoadGltf(std::filesystem::path path) {
                 "glTF material {} has a base-color texture transform that is not yet supported.",
                 materialIndex);
 
-            material.baseColorTextureIndex = static_cast<uint32_t>(textureInfo.textureIndex) + 1; // texture 0 is fallback white texture
-            m_textureSources[textureInfo.textureIndex].sRGB = true;
+            material.baseColorTextureIndex = resolveTextureIndex(textureInfo.textureIndex, true);
+        }
+
+        if (gltfMaterial.pbrData.metallicRoughnessTexture.has_value()) {
+            const fastgltf::TextureInfo& textureInfo = gltfMaterial.pbrData.metallicRoughnessTexture.value();
+            LOG_ERROR_IF(textureInfo.textureIndex >= asset->textures.size(),
+                "glTF material {} references invalid metallic-roughness texture {}.",
+                materialIndex,
+                textureInfo.textureIndex);
+            LOG_WARN_IF(textureInfo.texCoordIndex != 0,
+                "glTF material {} uses TEXCOORD_{} for metallic-roughness, but Stone currently samples TEXCOORD_0.",
+                materialIndex,
+                textureInfo.texCoordIndex);
+            LOG_WARN_IF(textureInfo.transform != nullptr,
+                "glTF material {} has a metallic-roughness texture transform that is not yet supported.",
+                materialIndex);
+
+            material.metallicRoughnessTextureIndex = resolveTextureIndex(textureInfo.textureIndex, false);
         }
 
         materials.push_back(material);
     }
+    materials.emplace_back(); // glTF's implicit default material
 
     std::vector<MeshRange> meshRanges;
     meshRanges.reserve(asset->meshes.size());
@@ -426,6 +484,7 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
 
         GPURenderPrimitive entry{};
         entry.worldMat = renderObject.transform;
+        entry.worldNormalMat = glm::inverseTranspose(renderObject.transform);
         entry.baseVertex = submesh.vertexOffset;
         entry.firstIndex = submesh.firstIndex;
         entry.indexCount = submesh.indexCount;
@@ -445,10 +504,10 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     for (const SceneMaterial& material : materials) {
         materialEntries.push_back(GPUMaterial{
             .baseColorFactor = material.baseColorFactor,
+            .metallicFactor = material.metallicFactor,
+            .roughnessFactor = material.roughnessFactor,
             .baseColorTextureIndex = material.baseColorTextureIndex,
-            .pad0 = 0,
-            .pad1 = 0,
-            .pad2 = 0,
+            .metallicRoughnessTextureIndex = material.metallicRoughnessTextureIndex,
         });
     }
     m_materialBuffer = std::make_unique<Buffer>(
@@ -462,6 +521,43 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
         0,
         commandBufferPool,
         queue);
+
+    std::vector<GPUDirectionalLight> directionalLightEntries;
+    directionalLightEntries.reserve(directionalLights.size());
+    for (const DirectionalLight& light : directionalLights) {
+        directionalLightEntries.push_back(GPUDirectionalLight{
+            .direction = glm::vec4(light.direction, 0.0f),
+            .colorAndIlluminance = glm::vec4(light.color, light.illuminance),
+        });
+    }
+
+    const GPULightListInfo lightListInfo {
+        .directionalLightCount = static_cast<uint32_t>(directionalLightEntries.size()),
+        .pointLightCount = 0,
+        .spotLightCount = 0,
+        .pad0 = 0,
+        .ambientColorAndIntensity = glm::vec4(ambientLight.color, ambientLight.intensity),
+    };
+    m_lightListInfoBuffer = std::make_unique<Buffer>(device, sizeof(GPULightListInfo), MTL::ResourceStorageModePrivate);
+    m_lightListInfoBuffer->GetNative()->setLabel(NS::String::string("Light List Info Buffer", NS::UTF8StringEncoding));
+    m_lightListInfoBuffer->UpdateStaged(&lightListInfo, sizeof(lightListInfo), 0, commandBufferPool, queue);
+
+    // Keep a valid GPU address even when the scene has no directional lights;
+    // the count remains zero so the shader never reads the dummy entry.
+    if (directionalLightEntries.empty())
+        directionalLightEntries.emplace_back();
+
+    m_directionalLightBuffer = std::make_unique<Buffer>(
+        device,
+        directionalLightEntries.size() * sizeof(GPUDirectionalLight),
+        MTL::ResourceStorageModePrivate);
+    m_directionalLightBuffer->GetNative()->setLabel(NS::String::string("Directional Light Buffer", NS::UTF8StringEncoding));
+    m_directionalLightBuffer->UpdateStaged(
+        directionalLightEntries.data(),
+        directionalLightEntries.size() * sizeof(GPUDirectionalLight),
+        0,
+        commandBufferPool,
+        queue);
 }
 
 void Scene::RegisterBuffers(RenderGraph &graph) {
@@ -470,4 +566,6 @@ void Scene::RegisterBuffers(RenderGraph &graph) {
     graph.RegisterBuffer("IndexBufferInfoBuffer", *m_indexBufferInfoBuffer);
     graph.RegisterBuffer("RenderPrimitiveBuffer", *m_renderPrimitiveBuffer);
     graph.RegisterBuffer("MaterialBuffer", *m_materialBuffer);
+    graph.RegisterBuffer("LightListInfoBuffer", *m_lightListInfoBuffer);
+    graph.RegisterBuffer("DirectionalLightBuffer", *m_directionalLightBuffer);
 }

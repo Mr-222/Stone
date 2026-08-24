@@ -12,10 +12,7 @@
 #include "Render/ObjectCullingPass.h"
 #include "Render/OpaqueDirectLightingPass.h"
 #include "Render/Scene.h"
-
-struct FrameUniform {
-    glm::mat4 viewProjection;
-};
+#include "Shader/ShaderTypes.h"
 
 Renderer::~Renderer() = default;
 
@@ -54,6 +51,22 @@ void Renderer::Setup() {
 
     m_scene = std::make_unique<Scene>();
     m_scene->LoadGltf("./Models/FlightHelmet/glTF/FlightHelmet.gltf");
+    m_scene->directionalLights = {
+        DirectionalLight{
+            .direction = glm::vec3(0.5f, -1.0f, 1.0f),
+            .color = glm::vec3(1.0f, 0.9f, 0.75f),
+            .illuminance = 10.0f,
+        },
+        DirectionalLight{
+            .direction = glm::vec3(-0.8f, -0.4f, -1.0f),
+            .color = glm::vec3(0.35f, 0.55f, 1.0f),
+            .illuminance = 3.0f,
+        },
+    };
+    m_scene->ambientLight = AmbientLight{
+        .color = glm::vec3(1.0f),
+        .intensity = 0.03f,
+    };
     m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);
 
@@ -173,7 +186,8 @@ void Renderer::Run() {
         m_renderGraph->RegisterFrameLocalTexture(kSceneDepthImageName, frameSlot, *depthTexture);
 
         FrameUniform frameUniform = {
-            .viewProjection = m_camera->GetProjectionMatrix() * m_camera->GetViewMatrix()
+            .viewProjection = m_camera->GetProjectionMatrix() * m_camera->GetViewMatrix(),
+            .cameraPosition = glm::vec4(m_camera->GetPosition(), 1.0f),
         };
         m_frameUniforms[frameSlot]->Update(&frameUniform, sizeof(FrameUniform));
 

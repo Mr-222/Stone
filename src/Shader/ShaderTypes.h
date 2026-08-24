@@ -8,6 +8,20 @@ constant constexpr uint32_t kMaxBindlessTextureCount = 1024;
 
 struct FrameUniform {
     float4x4 viewProjection;
+    float4 cameraPosition;
+};
+
+struct GPULightListInfo {
+    uint32_t directionalLightCount;
+    uint32_t pointLightCount;
+    uint32_t spotLightCount;
+    uint32_t pad0;
+    float4 ambientColorAndIntensity;
+};
+
+struct GPUDirectionalLight {
+    float4 direction;
+    float4 colorAndIlluminance;
 };
 
 struct GPURenderPrimitive {
@@ -16,14 +30,15 @@ struct GPURenderPrimitive {
     uint32_t indexCount;
     uint32_t materialIndex;
     float4x4 worldMat;
+    float4x4 worldNormalMat;
 };
 
 struct GPUMaterial {
     float4 baseColorFactor;
+    float metallicFactor;
+    float roughnessFactor;
     uint32_t baseColorTextureIndex;
-    uint32_t pad0;
-    uint32_t pad1;
-    uint32_t pad2;
+    uint32_t metallicRoughnessTextureIndex;
 };
 #else
 #include <cstdint>
@@ -33,6 +48,20 @@ constexpr uint32_t kMaxBindlessTextureCount = 1024;
 
 struct FrameUniform {
     glm::mat4 viewProjection;
+    glm::vec4 cameraPosition;
+};
+
+struct GPULightListInfo {
+    uint32_t directionalLightCount;
+    uint32_t pointLightCount;
+    uint32_t spotLightCount;
+    uint32_t pad0;
+    glm::vec4 ambientColorAndIntensity;
+};
+
+struct GPUDirectionalLight {
+    glm::vec4 direction;
+    glm::vec4 colorAndIlluminance;
 };
 
 struct GPURenderPrimitive {
@@ -41,15 +70,22 @@ struct GPURenderPrimitive {
     uint32_t indexCount;
     uint32_t materialIndex;
     glm::mat4 worldMat;
+    glm::mat4 worldNormalMat;
 };
 
 struct GPUMaterial {
     glm::vec4 baseColorFactor;
+    float metallicFactor;
+    float roughnessFactor;
     uint32_t baseColorTextureIndex;
-    uint32_t pad0;
-    uint32_t pad1;
-    uint32_t pad2;
+    uint32_t metallicRoughnessTextureIndex;
 };
+
+static_assert(sizeof(FrameUniform) == 80);
+static_assert(sizeof(GPULightListInfo) == 32);
+static_assert(sizeof(GPUDirectionalLight) == 32);
+static_assert(sizeof(GPURenderPrimitive) == 144);
+static_assert(sizeof(GPUMaterial) == 32);
 #endif
 
 struct IndirectCommandBufferExecutionRange {
@@ -115,8 +151,10 @@ enum class OpaqueDirectLightingVertexArgumentID {
 
 enum class OpaqueDirectLightingFragmentArgumentID {
     Materials,
+    LightListInfo,
+    DirectionalLights,
     Textures,
-    MaxArgumentID = 1 + kMaxBindlessTextureCount,
+    MaxArgumentID = 3 + kMaxBindlessTextureCount,
 };
 
 #ifdef __METAL_VERSION__
@@ -152,7 +190,9 @@ struct OpaqueDirectLightingVertexArguments {
 
 struct OpaqueDirectLightingFragmentArguments {
     const device GPUMaterial* materials [[id(OpaqueDirectLightingFragmentArgumentID::Materials)]];
-    array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(OpaqueDirectLightingFragmentArgumentID::Textures)]];
+    const device GPULightListInfo& lightListInfo [[id(OpaqueDirectLightingFragmentArgumentID::LightListInfo)]];
+    const device GPUDirectionalLight* directionalLights [[id(OpaqueDirectLightingFragmentArgumentID::DirectionalLights)]];
+    const array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(OpaqueDirectLightingFragmentArgumentID::Textures)]];
 };
 
 #endif

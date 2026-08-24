@@ -18,6 +18,8 @@ struct OpaqueDirectLightingVertexArgumentData {
 
 struct OpaqueDirectLightingFragmentArgumentData {
     MTL::GPUAddress materials;
+    MTL::GPUAddress lightListInfo;
+    MTL::GPUAddress directionalLights;
     std::array<MTL::ResourceID, kMaxBindlessTextureCount> textures;
 };
 
@@ -34,6 +36,8 @@ struct OpaqueDirectLightingPassData {
     RenderGraphResourceHandle globalIndexBufferHandle;
     RenderGraphResourceHandle renderPrimitiveBufferHandle;
     RenderGraphResourceHandle materialBufferHandle;
+    RenderGraphResourceHandle lightListInfoBufferHandle;
+    RenderGraphResourceHandle directionalLightBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
     std::vector<MTL::Texture*> textures;
     int numPrimitives;
@@ -149,6 +153,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle globalIndexBufferHandle = graph.DeclareBuffer("GlobalIndexBuffer");
     RenderGraphResourceHandle renderPrimitiveBufferHandle = graph.DeclareBuffer("RenderPrimitiveBuffer");
     RenderGraphResourceHandle materialBufferHandle = graph.DeclareBuffer("MaterialBuffer");
+    RenderGraphResourceHandle lightListInfoBufferHandle = graph.DeclareBuffer("LightListInfoBuffer");
+    RenderGraphResourceHandle directionalLightBufferHandle = graph.DeclareBuffer("DirectionalLightBuffer");
     RenderGraphResourceHandle indirectCBHandle = graph.DeclareIndirectCommandBuffer("IndirectCommandBuffer");
 
     graph.AddPass<OpaqueDirectLightingPassData>(
@@ -175,6 +181,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.globalIndexBufferHandle = globalIndexBufferHandle;
             data.renderPrimitiveBufferHandle = renderPrimitiveBufferHandle;
             data.materialBufferHandle = materialBufferHandle;
+            data.lightListInfoBufferHandle = lightListInfoBufferHandle;
+            data.directionalLightBufferHandle = directionalLightBufferHandle;
             data.indirectCBHandle = indirectCBHandle;
             data.textures = m_textures;
             data.numPrimitives = m_numPrimitives;
@@ -184,6 +192,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             builder.ReadBuffer(globalIndexBufferHandle);
             builder.ReadBuffer(renderPrimitiveBufferHandle);
             builder.ReadBuffer(materialBufferHandle);
+            builder.ReadBuffer(lightListInfoBufferHandle);
+            builder.ReadBuffer(directionalLightBufferHandle);
             builder.ReadIndirectCommandBuffer(indirectCBHandle);
 
             MTL::Buffer* globalVertexBuffer = resources.GetBuffer(globalVertexBufferHandle);
@@ -200,9 +210,15 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
 
             MTL::Buffer* materialBuffer = resources.GetBuffer(materialBufferHandle);
             LOG_ERROR_IF(!materialBuffer, "OpaqueDirectLighting: Failed to get material buffer");
+            MTL::Buffer* lightListInfoBuffer = resources.GetBuffer(lightListInfoBufferHandle);
+            LOG_ERROR_IF(!lightListInfoBuffer, "OpaqueDirectLighting: Failed to get light list info buffer");
+            MTL::Buffer* directionalLightBuffer = resources.GetBuffer(directionalLightBufferHandle);
+            LOG_ERROR_IF(!directionalLightBuffer, "OpaqueDirectLighting: Failed to get directional light buffer");
 
             OpaqueDirectLightingFragmentArgumentData fragmentArguments {
                 .materials = materialBuffer->gpuAddress(),
+                .lightListInfo = lightListInfoBuffer->gpuAddress(),
+                .directionalLights = directionalLightBuffer->gpuAddress(),
             };
             for (size_t textureIndex = 0; textureIndex < fragmentArguments.textures.size(); ++textureIndex) {
                 MTL::Texture* texture = textureIndex < m_textures.size()
@@ -218,6 +234,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* globalIndexBuffer = resources.GetBuffer(data.globalIndexBufferHandle);
             MTL::Buffer* renderPrimitiveBuffer = resources.GetBuffer(data.renderPrimitiveBufferHandle);
             MTL::Buffer* materialBuffer = resources.GetBuffer(data.materialBufferHandle);
+            MTL::Buffer* lightListInfoBuffer = resources.GetBuffer(data.lightListInfoBufferHandle);
+            MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
 
             LOG_ERROR_IF(!frameUniformBuffer, "OpaqueDirectLighting: Failed to get frame uniform buffer");
@@ -225,6 +243,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!globalIndexBuffer, "OpaqueDirectLighting: Failed to get global index buffer");
             LOG_ERROR_IF(!renderPrimitiveBuffer, "OpaqueDirectLighting: Failed to get render primitive buffer");
             LOG_ERROR_IF(!materialBuffer, "OpaqueDirectLighting: Failed to get material buffer");
+            LOG_ERROR_IF(!lightListInfoBuffer, "OpaqueDirectLighting: Failed to get light list info buffer");
+            LOG_ERROR_IF(!directionalLightBuffer, "OpaqueDirectLighting: Failed to get directional light buffer");
             LOG_ERROR_IF(!indirectCB, "OpaqueDirectLighting: Failed to get indirect command buffer");
 
             data.argumentTable->setAddress(
@@ -236,6 +256,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             cmd.AddResource(globalIndexBuffer);
             cmd.AddResource(renderPrimitiveBuffer);
             cmd.AddResource(materialBuffer);
+            cmd.AddResource(lightListInfoBuffer);
+            cmd.AddResource(directionalLightBuffer);
             cmd.AddResource(indirectCB);
             cmd.AddResource(data.vertexArgumentBuffer);
             cmd.AddResource(data.fragmentArgumentBuffer);
@@ -290,7 +312,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             renderEncoder->setDepthStencilState(data.depthStencilState);
             renderEncoder->setViewport(viewport);
             renderEncoder->setCullMode(MTL::CullModeBack);
-            renderEncoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+            renderEncoder->setFrontFacingWinding(MTL::WindingClockwise);
             renderEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex | MTL::RenderStageFragment);
 
             renderEncoder->executeCommandsInBuffer(indirectCB, NS::Range(0, data.numPrimitives));

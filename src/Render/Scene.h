@@ -11,6 +11,21 @@
 #include "Core/RenderGraph.h"
 #include "Core/Texture.h"
 
+struct DirectionalLight
+{
+    // Direction in which the light rays travel. The shader uses its negation
+    // as the direction from the shaded point toward the light.
+    glm::vec3 direction;
+    glm::vec3 color;
+    float illuminance;
+};
+
+struct AmbientLight
+{
+    glm::vec3 color;
+    float intensity;
+};
+
 class Scene {
 public:
     void LoadGltf(std::filesystem::path path);
@@ -25,6 +40,8 @@ public:
     std::vector<RenderObject> objects;
     std::vector<RenderPrimitive> renderPrimitives;
     std::vector<SceneMaterial> materials;
+    std::vector<DirectionalLight> directionalLights;
+    AmbientLight ambientLight;
 
 private:
     struct MeshRange
@@ -47,6 +64,8 @@ private:
     std::unique_ptr<Buffer> m_renderPrimitiveBuffer;
     std::unique_ptr<Buffer> m_indexBufferInfoBuffer;
     std::unique_ptr<Buffer> m_materialBuffer;
+    std::unique_ptr<Buffer> m_lightListInfoBuffer;
+    std::unique_ptr<Buffer> m_directionalLightBuffer;
 
     std::vector<std::vector<std::byte>> m_encodedImages;
     std::vector<TextureSource> m_textureSources;

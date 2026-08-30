@@ -27,6 +27,10 @@ Window::Window(int width, int height): m_width(width), m_height(height) {
     NSView* contentView = [cocoaWindow contentView];
     [contentView setWantsLayer:YES];
     [contentView setLayer:(__bridge CALayer*)m_metalLayer.get()];
+
+    int fbWidth = 0, fbHeight = 0;
+    glfwGetFramebufferSize(m_window, &fbWidth, &fbHeight);
+    m_metalLayer->setDrawableSize(CGSizeMake(fbWidth, fbHeight));
 }
 
 Window::~Window() {

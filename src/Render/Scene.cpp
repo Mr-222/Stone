@@ -123,21 +123,27 @@ glm::mat4 ToGlm(const fastgltf::math::fmat4x4& matrix) {
     return result;
 }
 
-Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
-    Mesh outputMesh;
+struct LoadedMesh {
+    Mesh opaqueMesh;
+    Mesh transparentMesh;
+};
+
+LoadedMesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
+    LoadedMesh output;
     const auto defaultMaterialIndex = static_cast<uint32_t>(asset.materials.size());
 
     for (auto it = mesh.primitives.begin(); it != mesh.primitives.end(); ++it) {
+        bool isTransparent = false;
         if (it->materialIndex.has_value()) {
             const fastgltf::Material& material = asset.materials[it->materialIndex.value()];
             const bool hasTransmission = material.transmission && material.transmission->transmissionFactor > 0.0f;
 
-            // TODO: BLEND/KHR_materials_transmission materials to a transparent pass.
-            if (material.alphaMode != fastgltf::AlphaMode::Opaque || hasTransmission) {
-                LOG_WARN("Skipping non-opaque glTF material {} until its render path is implemented.", it->materialIndex.value());
-                continue;
+            if (material.alphaMode == fastgltf::AlphaMode::Blend || hasTransmission || material.pbrData.baseColorFactor[3] < 1.0f) {
+                isTransparent = true;
             }
         }
+
+        Mesh& targetMesh = isTransparent ? output.transparentMesh : output.opaqueMesh;
 
         auto* positionIt = it->findAttribute("POSITION");
         const bool hasPosition = positionIt != it->attributes.end();
@@ -146,14 +152,14 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
         const bool hasIndices = it->indicesAccessor.has_value();
         LOG_ERROR_IF(!hasIndices, "Failed to find index accessor");
 
-        const size_t vertexOffset = outputMesh.vertices->size();
+        const size_t vertexOffset = targetMesh.vertices->size();
 
         // Position
         {
             auto& positionAccessor = asset.accessors[positionIt->accessorIndex];
-            outputMesh.vertices->resize(vertexOffset + positionAccessor.count);
-            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, positionAccessor, [&outputMesh, vertexOffset](fastgltf::math::fvec3 pos, std::size_t idx) {
-                auto& vertex = outputMesh.vertices->at(vertexOffset + idx);
+            targetMesh.vertices->resize(vertexOffset + positionAccessor.count);
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, positionAccessor, [&targetMesh, vertexOffset](fastgltf::math::fvec3 pos, std::size_t idx) {
+                auto& vertex = targetMesh.vertices->at(vertexOffset + idx);
                 vertex.position = glm::vec3(pos.x(), pos.y(), pos.z());
                 vertex.normal = glm::vec3(0.f, 1.f, 0.f);
                 vertex.uv = glm::vec2(0.f, 0.f);
@@ -168,8 +174,8 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
             LOG_WARN_IF(!hasNormal, "Failed to find normal attribute");
             if (hasNormal) {
                 auto& normalAccessor = asset.accessors[normalIt->accessorIndex];
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, normalAccessor, [&outputMesh, vertexOffset](fastgltf::math::fvec3 normal, std::size_t idx) {
-                    outputMesh.vertices->at(vertexOffset + idx).normal = glm::vec3(normal.x(), normal.y(), normal.z());
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, normalAccessor, [&targetMesh, vertexOffset](fastgltf::math::fvec3 normal, std::size_t idx) {
+                    targetMesh.vertices->at(vertexOffset + idx).normal = glm::vec3(normal.x(), normal.y(), normal.z());
                 });
             }
         }
@@ -181,8 +187,8 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
             LOG_WARN_IF(!hasTexcoord, "Failed to find texcoord attribute");
             if (hasTexcoord) {
                 auto& texcoordAccessor = asset.accessors[texcoordIt->accessorIndex];
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(asset, texcoordAccessor, [&outputMesh, vertexOffset](fastgltf::math::fvec2 uv, std::size_t idx) {
-                    outputMesh.vertices->at(vertexOffset + idx).uv = glm::vec2(uv.x(), uv.y());
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(asset, texcoordAccessor, [&targetMesh, vertexOffset](fastgltf::math::fvec2 uv, std::size_t idx) {
+                    targetMesh.vertices->at(vertexOffset + idx).uv = glm::vec2(uv.x(), uv.y());
                 });
             }
         }
@@ -194,8 +200,8 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
             LOG_WARN_IF(!hasTangent, "Failed to find tangent attribute");
             if (hasTangent) {
                 auto& tangentAccessor = asset.accessors[tangentIt->accessorIndex];
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(asset, tangentAccessor, [&outputMesh, vertexOffset](fastgltf::math::fvec4 tangent, std::size_t idx) {
-                    outputMesh.vertices->at(vertexOffset + idx).tangent = glm::vec3(tangent.x(), tangent.y(), tangent.z());
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(asset, tangentAccessor, [&targetMesh, vertexOffset](fastgltf::math::fvec4 tangent, std::size_t idx) {
+                    targetMesh.vertices->at(vertexOffset + idx).tangent = glm::vec3(tangent.x(), tangent.y(), tangent.z());
                 });
             }
         }
@@ -203,14 +209,14 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
         // Indices
         {
             auto& indexAccessor = asset.accessors[it->indicesAccessor.value()];
-            const auto indexOffset = outputMesh.indices->size();
-            outputMesh.indices->resize(indexOffset + indexAccessor.count);
-            fastgltf::iterateAccessorWithIndex<std::uint32_t>(asset, indexAccessor, [&outputMesh, vertexOffset, indexOffset](std::uint32_t index, std::size_t idx) {
+            const auto indexOffset = targetMesh.indices->size();
+            targetMesh.indices->resize(indexOffset + indexAccessor.count);
+            fastgltf::iterateAccessorWithIndex<std::uint32_t>(asset, indexAccessor, [&targetMesh, vertexOffset, indexOffset](std::uint32_t index, std::size_t idx) {
                 const auto meshIndex = vertexOffset + index;
-                outputMesh.indices->at(indexOffset + idx) = static_cast<uint32_t>(meshIndex);
+                targetMesh.indices->at(indexOffset + idx) = static_cast<uint32_t>(meshIndex);
             });
 
-            outputMesh.submeshes.push_back(SubMesh{
+            targetMesh.submeshes.push_back(SubMesh{
                 static_cast<uint32_t>(indexOffset),
                 static_cast<uint32_t>(indexAccessor.count),
                 0,
@@ -221,20 +227,20 @@ Mesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
         }
     }
 
-    return outputMesh;
+    return output;
 }
 
-Scene::MeshRange Scene::MergeMesh(Mesh&& mesh) {
-    const auto vertexOffset = static_cast<uint32_t>(globalVertices.size());
-    const auto indexOffset = static_cast<uint32_t>(globalIndices.size());
-    const auto firstSubmesh = static_cast<uint32_t>(submeshes.size());
+Scene::MeshRange Scene::MergeMesh(Mesh&& mesh, std::vector<Vertex>& targetVertices, std::vector<uint32_t>& targetIndices, std::vector<SubMesh>& targetSubmeshes) {
+    const auto vertexOffset = static_cast<uint32_t>(targetVertices.size());
+    const auto indexOffset = static_cast<uint32_t>(targetIndices.size());
+    const auto firstSubmesh = static_cast<uint32_t>(targetSubmeshes.size());
     const auto submeshCount = static_cast<uint32_t>(mesh.submeshes.size());
 
-    globalVertices.insert(globalVertices.end(), mesh.vertices->begin(), mesh.vertices->end());
-    globalIndices.insert(globalIndices.end(), mesh.indices->begin(), mesh.indices->end());
+    targetVertices.insert(targetVertices.end(), mesh.vertices->begin(), mesh.vertices->end());
+    targetIndices.insert(targetIndices.end(), mesh.indices->begin(), mesh.indices->end());
 
     for (const auto& submesh : mesh.submeshes) {
-        submeshes.push_back(SubMesh{
+        targetSubmeshes.push_back(SubMesh{
             indexOffset + submesh.firstIndex,
             submesh.indexCount,
             vertexOffset + submesh.vertexOffset,
@@ -359,7 +365,7 @@ void Scene::LoadGltf(std::filesystem::path path) {
     }
     materials.emplace_back(); // glTF's implicit default material
 
-    std::vector<MeshRange> meshRanges;
+    std::vector<MeshRanges> meshRanges;
     meshRanges.reserve(asset->meshes.size());
     for (auto& gltfMesh : asset->meshes) {
         for (const fastgltf::Primitive& primitive : gltfMesh.primitives) {
@@ -367,7 +373,10 @@ void Scene::LoadGltf(std::filesystem::path path) {
                 "glTF primitive references invalid material {}.",
                 primitive.materialIndex.value());
         }
-        meshRanges.emplace_back(MergeMesh(LoadMesh(asset.get(), gltfMesh)));
+        LoadedMesh loaded = LoadMesh(asset.get(), gltfMesh);
+        MeshRange opaqueRange = MergeMesh(std::move(loaded.opaqueMesh), opaqueVertices, opaqueIndices, opaqueSubmeshes);
+        MeshRange transparentRange = MergeMesh(std::move(loaded.transparentMesh), transparentVertices, transparentIndices, transparentSubmeshes);
+        meshRanges.push_back(MeshRanges{opaqueRange, transparentRange});
     }
 
     const bool hasScenes = !asset->scenes.empty();
@@ -386,9 +395,16 @@ void Scene::LoadGltf(std::filesystem::path path) {
             ToGlm(transform),
         });
 
-        for (uint32_t i = 0; i < meshRange.submeshCount; ++i) {
-            renderPrimitives.push_back(RenderPrimitive{
-                meshRange.firstSubmesh + i,
+        for (uint32_t i = 0; i < meshRange.opaqueRange.submeshCount; ++i) {
+            opaqueRenderPrimitives.push_back(RenderPrimitive{
+                meshRange.opaqueRange.firstSubmesh + i,
+                objectIndex,
+            });
+        }
+
+        for (uint32_t i = 0; i < meshRange.transparentRange.submeshCount; ++i) {
+            transparentRenderPrimitives.push_back(RenderPrimitive{
+                meshRange.transparentRange.firstSubmesh + i,
                 objectIndex,
             });
         }
@@ -447,40 +463,30 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
             textureSource.name);
     }
 
-    LOG_WARN_IF(globalVertices.empty(), "Scene has no vertices to commit");
-    const size_t vertexBufferSize = globalVertices.size() * sizeof(Vertex);
-    m_vertexBuffer = std::make_unique<Buffer>(
-        device,
-        vertexBufferSize,
-        MTL::ResourceStorageModePrivate);
-    m_vertexBuffer->GetNative()->setLabel(NS::String::string("Global Vertex Buffer", NS::UTF8StringEncoding));
-    if (vertexBufferSize > 0)
-        m_vertexBuffer->UpdateStaged(globalVertices.data(), vertexBufferSize, 0, commandBufferPool, queue);
+    // --- Opaque Geometry Buffers ---
+    LOG_WARN_IF(opaqueVertices.empty(), "Scene has no opaque vertices to commit");
+    const size_t opaqueVertexBufferSize = std::max(opaqueVertices.size() * sizeof(Vertex), sizeof(Vertex));
+    m_opaqueVertexBuffer = std::make_unique<Buffer>(device, opaqueVertexBufferSize, MTL::ResourceStorageModePrivate);
+    m_opaqueVertexBuffer->GetNative()->setLabel(NS::String::string("Opaque Vertex Buffer", NS::UTF8StringEncoding));
+    if (!opaqueVertices.empty())
+        m_opaqueVertexBuffer->UpdateStaged(opaqueVertices.data(), opaqueVertices.size() * sizeof(Vertex), 0, commandBufferPool, queue);
 
-    LOG_WARN_IF(globalIndices.empty(), "Scene has no indices to commit");
-    const size_t indexBufferSize = globalIndices.size() * sizeof(uint32_t);
-    m_indexBuffer = std::make_unique<Buffer>(
-        device,
-        indexBufferSize,
-        MTL::ResourceStorageModePrivate);
-    m_indexBuffer->GetNative()->setLabel(NS::String::string("Global Index Buffer", NS::UTF8StringEncoding));
-    if (indexBufferSize > 0)
-        m_indexBuffer->UpdateStaged(globalIndices.data(), indexBufferSize, 0, commandBufferPool, queue);
+    LOG_WARN_IF(opaqueIndices.empty(), "Scene has no opaque indices to commit");
+    const size_t opaqueIndexBufferSize = std::max(opaqueIndices.size() * sizeof(uint32_t), sizeof(uint32_t));
+    m_opaqueIndexBuffer = std::make_unique<Buffer>(device, opaqueIndexBufferSize, MTL::ResourceStorageModePrivate);
+    m_opaqueIndexBuffer->GetNative()->setLabel(NS::String::string("Opaque Index Buffer", NS::UTF8StringEncoding));
+    if (!opaqueIndices.empty())
+        m_opaqueIndexBuffer->UpdateStaged(opaqueIndices.data(), opaqueIndices.size() * sizeof(uint32_t), 0, commandBufferPool, queue);
 
-    const uint64_t indexBufferAddress = m_indexBuffer->GetGPUAddress();
-    m_indexBufferInfoBuffer = std::make_unique<Buffer>(
-        device,
-        &indexBufferAddress,
-        sizeof(indexBufferAddress),
-        MTL::ResourceStorageModeShared
-    );
-    m_indexBufferInfoBuffer->GetNative()->setLabel(NS::String::string("Index Buffer Info Buffer", NS::UTF8StringEncoding));
+    const uint64_t opaqueIndexBufferAddress = m_opaqueIndexBuffer->GetGPUAddress();
+    m_opaqueIndexBufferInfoBuffer = std::make_unique<Buffer>(device, &opaqueIndexBufferAddress, sizeof(opaqueIndexBufferAddress), MTL::ResourceStorageModeShared);
+    m_opaqueIndexBufferInfoBuffer->GetNative()->setLabel(NS::String::string("Opaque Index Buffer Info Buffer", NS::UTF8StringEncoding));
 
-    std::vector<GPURenderPrimitive> primitiveEntries{};
-    primitiveEntries.reserve(renderPrimitives.size());
-    for (const RenderPrimitive& renderPrimitive : renderPrimitives) {
+    std::vector<GPURenderPrimitive> opaquePrimitiveEntries{};
+    opaquePrimitiveEntries.reserve(opaqueRenderPrimitives.size());
+    for (const RenderPrimitive& renderPrimitive : opaqueRenderPrimitives) {
         const RenderObject& renderObject = objects[renderPrimitive.objectIndex];
-        const SubMesh& submesh = submeshes[renderPrimitive.submeshIndex];
+        const SubMesh& submesh = opaqueSubmeshes[renderPrimitive.submeshIndex];
 
         GPURenderPrimitive entry{};
         entry.worldMat = renderObject.transform;
@@ -489,16 +495,53 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
         entry.firstIndex = submesh.firstIndex;
         entry.indexCount = submesh.indexCount;
         entry.materialIndex = submesh.materialIndex;
-        primitiveEntries.push_back(entry);
+        opaquePrimitiveEntries.push_back(entry);
     }
-    m_renderPrimitiveBuffer = std::make_unique<Buffer>(
-        device,
-        primitiveEntries.size() * sizeof(GPURenderPrimitive),
-        MTL::ResourceStorageModePrivate);
-    m_renderPrimitiveBuffer->GetNative()->setLabel(NS::String::string("Render Primitive Buffer", NS::UTF8StringEncoding));
-    if (!primitiveEntries.empty())
-        m_renderPrimitiveBuffer->UpdateStaged(primitiveEntries.data(), primitiveEntries.size() * sizeof(GPURenderPrimitive), 0, commandBufferPool, queue);
+    const size_t opaquePrimitiveBufferSize = std::max(opaquePrimitiveEntries.size() * sizeof(GPURenderPrimitive), sizeof(GPURenderPrimitive));
+    m_opaqueRenderPrimitiveBuffer = std::make_unique<Buffer>(device, opaquePrimitiveBufferSize, MTL::ResourceStorageModePrivate);
+    m_opaqueRenderPrimitiveBuffer->GetNative()->setLabel(NS::String::string("Opaque Render Primitive Buffer", NS::UTF8StringEncoding));
+    if (!opaquePrimitiveEntries.empty())
+        m_opaqueRenderPrimitiveBuffer->UpdateStaged(opaquePrimitiveEntries.data(), opaquePrimitiveEntries.size() * sizeof(GPURenderPrimitive), 0, commandBufferPool, queue);
 
+    // --- Transparent Geometry Buffers ---
+    const size_t transparentVertexBufferSize = std::max(transparentVertices.size() * sizeof(Vertex), sizeof(Vertex));
+    m_transparentVertexBuffer = std::make_unique<Buffer>(device, transparentVertexBufferSize, MTL::ResourceStorageModePrivate);
+    m_transparentVertexBuffer->GetNative()->setLabel(NS::String::string("Transparent Vertex Buffer", NS::UTF8StringEncoding));
+    if (!transparentVertices.empty())
+        m_transparentVertexBuffer->UpdateStaged(transparentVertices.data(), transparentVertices.size() * sizeof(Vertex), 0, commandBufferPool, queue);
+
+    const size_t transparentIndexBufferSize = std::max(transparentIndices.size() * sizeof(uint32_t), sizeof(uint32_t));
+    m_transparentIndexBuffer = std::make_unique<Buffer>(device, transparentIndexBufferSize, MTL::ResourceStorageModePrivate);
+    m_transparentIndexBuffer->GetNative()->setLabel(NS::String::string("Transparent Index Buffer", NS::UTF8StringEncoding));
+    if (!transparentIndices.empty())
+        m_transparentIndexBuffer->UpdateStaged(transparentIndices.data(), transparentIndices.size() * sizeof(uint32_t), 0, commandBufferPool, queue);
+
+    const uint64_t transparentIndexBufferAddress = m_transparentIndexBuffer->GetGPUAddress();
+    m_transparentIndexBufferInfoBuffer = std::make_unique<Buffer>(device, &transparentIndexBufferAddress, sizeof(transparentIndexBufferAddress), MTL::ResourceStorageModeShared);
+    m_transparentIndexBufferInfoBuffer->GetNative()->setLabel(NS::String::string("Transparent Index Buffer Info Buffer", NS::UTF8StringEncoding));
+
+    std::vector<GPURenderPrimitive> transparentPrimitiveEntries{};
+    transparentPrimitiveEntries.reserve(transparentRenderPrimitives.size());
+    for (const RenderPrimitive& renderPrimitive : transparentRenderPrimitives) {
+        const RenderObject& renderObject = objects[renderPrimitive.objectIndex];
+        const SubMesh& submesh = transparentSubmeshes[renderPrimitive.submeshIndex];
+
+        GPURenderPrimitive entry{};
+        entry.worldMat = renderObject.transform;
+        entry.worldNormalMat = glm::inverseTranspose(renderObject.transform);
+        entry.baseVertex = submesh.vertexOffset;
+        entry.firstIndex = submesh.firstIndex;
+        entry.indexCount = submesh.indexCount;
+        entry.materialIndex = submesh.materialIndex;
+        transparentPrimitiveEntries.push_back(entry);
+    }
+    const size_t transparentPrimitiveBufferSize = std::max(transparentPrimitiveEntries.size() * sizeof(GPURenderPrimitive), sizeof(GPURenderPrimitive));
+    m_transparentRenderPrimitiveBuffer = std::make_unique<Buffer>(device, transparentPrimitiveBufferSize, MTL::ResourceStorageModePrivate);
+    m_transparentRenderPrimitiveBuffer->GetNative()->setLabel(NS::String::string("Transparent Render Primitive Buffer", NS::UTF8StringEncoding));
+    if (!transparentPrimitiveEntries.empty())
+        m_transparentRenderPrimitiveBuffer->UpdateStaged(transparentPrimitiveEntries.data(), transparentPrimitiveEntries.size() * sizeof(GPURenderPrimitive), 0, commandBufferPool, queue);
+
+    // --- Materials and Lights ---
     std::vector<GPUMaterial> materialEntries{};
     materialEntries.reserve(materials.size());
     for (const SceneMaterial& material : materials) {
@@ -510,17 +553,10 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
             .metallicRoughnessTextureIndex = material.metallicRoughnessTextureIndex,
         });
     }
-    m_materialBuffer = std::make_unique<Buffer>(
-        device,
-        materialEntries.size() * sizeof(GPUMaterial),
-        MTL::ResourceStorageModePrivate);
+    m_materialBuffer = std::make_unique<Buffer>(device, materialEntries.size() * sizeof(GPUMaterial), MTL::ResourceStorageModePrivate);
     m_materialBuffer->GetNative()->setLabel(NS::String::string("Material Buffer", NS::UTF8StringEncoding));
-    m_materialBuffer->UpdateStaged(
-        materialEntries.data(),
-        materialEntries.size() * sizeof(GPUMaterial),
-        0,
-        commandBufferPool,
-        queue);
+    m_materialBuffer->UpdateStaged(materialEntries.data(), materialEntries.size() * sizeof(GPUMaterial), 0, commandBufferPool, queue);
+
 
     std::vector<GPUDirectionalLight> directionalLightEntries;
     directionalLightEntries.reserve(directionalLights.size());
@@ -547,24 +583,23 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     if (directionalLightEntries.empty())
         directionalLightEntries.emplace_back();
 
-    m_directionalLightBuffer = std::make_unique<Buffer>(
-        device,
-        directionalLightEntries.size() * sizeof(GPUDirectionalLight),
-        MTL::ResourceStorageModePrivate);
+    m_directionalLightBuffer = std::make_unique<Buffer>(device, directionalLightEntries.size() * sizeof(GPUDirectionalLight), MTL::ResourceStorageModePrivate);
     m_directionalLightBuffer->GetNative()->setLabel(NS::String::string("Directional Light Buffer", NS::UTF8StringEncoding));
-    m_directionalLightBuffer->UpdateStaged(
-        directionalLightEntries.data(),
-        directionalLightEntries.size() * sizeof(GPUDirectionalLight),
-        0,
-        commandBufferPool,
-        queue);
+    m_directionalLightBuffer->UpdateStaged(directionalLightEntries.data(), directionalLightEntries.size() * sizeof(GPUDirectionalLight), 0, commandBufferPool, queue);
+
 }
 
 void Scene::RegisterBuffers(RenderGraph &graph) {
-    graph.RegisterBuffer("GlobalVertexBuffer", *m_vertexBuffer);
-    graph.RegisterBuffer("GlobalIndexBuffer", *m_indexBuffer);
-    graph.RegisterBuffer("IndexBufferInfoBuffer", *m_indexBufferInfoBuffer);
-    graph.RegisterBuffer("RenderPrimitiveBuffer", *m_renderPrimitiveBuffer);
+    graph.RegisterBuffer("GlobalVertexBuffer", *m_opaqueVertexBuffer);
+    graph.RegisterBuffer("GlobalIndexBuffer", *m_opaqueIndexBuffer);
+    graph.RegisterBuffer("IndexBufferInfoBuffer", *m_opaqueIndexBufferInfoBuffer);
+    graph.RegisterBuffer("RenderPrimitiveBuffer", *m_opaqueRenderPrimitiveBuffer);
+
+    graph.RegisterBuffer("TransparentVertexBuffer", *m_transparentVertexBuffer);
+    graph.RegisterBuffer("TransparentIndexBuffer", *m_transparentIndexBuffer);
+    graph.RegisterBuffer("TransparentIndexBufferInfoBuffer", *m_transparentIndexBufferInfoBuffer);
+    graph.RegisterBuffer("TransparentRenderPrimitiveBuffer", *m_transparentRenderPrimitiveBuffer);
+
     graph.RegisterBuffer("MaterialBuffer", *m_materialBuffer);
     graph.RegisterBuffer("LightListInfoBuffer", *m_lightListInfoBuffer);
     graph.RegisterBuffer("DirectionalLightBuffer", *m_directionalLightBuffer);

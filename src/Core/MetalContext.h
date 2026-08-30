@@ -26,6 +26,9 @@ public:
     uint32_t GetCurrentFrameSlot() const { return static_cast<uint32_t>(m_currentFrameIndex % MAX_FRAMES_IN_FLIGHT); }
     uint32_t GetFrameSlotCount() const { return MAX_FRAMES_IN_FLIGHT; }
     MTL::PixelFormat GetSwapchainPixelFormat() const { return kSwapchainPixelFormat; }
+    uint32_t GetDrawableWidth() const { return static_cast<uint32_t>(m_swapchain->drawableSize().width); }
+    uint32_t GetDrawableHeight() const { return static_cast<uint32_t>(m_swapchain->drawableSize().height); }
+    CA::MetalLayer* GetSwapchain() const { return m_swapchain; }
 
 private:
     static constexpr MTL::PixelFormat kSwapchainPixelFormat = MTL::PixelFormatRGBA16Float;

@@ -34,11 +34,17 @@ public:
 
     const std::vector<Texture>& GetTextures() const { return m_textures; }
 
-    std::vector<Vertex> globalVertices;
-    std::vector<uint32_t> globalIndices;
-    std::vector<SubMesh> submeshes;
+    std::vector<Vertex> opaqueVertices;
+    std::vector<uint32_t> opaqueIndices;
+    std::vector<SubMesh> opaqueSubmeshes;
+    std::vector<RenderPrimitive> opaqueRenderPrimitives;
+
+    std::vector<Vertex> transparentVertices;
+    std::vector<uint32_t> transparentIndices;
+    std::vector<SubMesh> transparentSubmeshes;
+    std::vector<RenderPrimitive> transparentRenderPrimitives;
+
     std::vector<RenderObject> objects;
-    std::vector<RenderPrimitive> renderPrimitives;
     std::vector<SceneMaterial> materials;
     std::vector<DirectionalLight> directionalLights;
     AmbientLight ambientLight;
@@ -50,6 +56,12 @@ private:
         uint32_t submeshCount;
     };
 
+    struct MeshRanges
+    {
+        MeshRange opaqueRange;
+        MeshRange transparentRange;
+    };
+
     struct TextureSource
     {
         uint32_t imageIndex;
@@ -57,12 +69,18 @@ private:
         std::string name;
     };
 
-    MeshRange MergeMesh(Mesh&& mesh);
+    static MeshRange MergeMesh(Mesh&& mesh, std::vector<Vertex>& targetVertices, std::vector<uint32_t>& targetIndices, std::vector<SubMesh>& targetSubmeshes);
 
-    std::unique_ptr<Buffer> m_vertexBuffer;
-    std::unique_ptr<Buffer> m_indexBuffer;
-    std::unique_ptr<Buffer> m_renderPrimitiveBuffer;
-    std::unique_ptr<Buffer> m_indexBufferInfoBuffer;
+    std::unique_ptr<Buffer> m_opaqueVertexBuffer;
+    std::unique_ptr<Buffer> m_opaqueIndexBuffer;
+    std::unique_ptr<Buffer> m_opaqueRenderPrimitiveBuffer;
+    std::unique_ptr<Buffer> m_opaqueIndexBufferInfoBuffer;
+
+    std::unique_ptr<Buffer> m_transparentVertexBuffer;
+    std::unique_ptr<Buffer> m_transparentIndexBuffer;
+    std::unique_ptr<Buffer> m_transparentRenderPrimitiveBuffer;
+    std::unique_ptr<Buffer> m_transparentIndexBufferInfoBuffer;
+
     std::unique_ptr<Buffer> m_materialBuffer;
     std::unique_ptr<Buffer> m_lightListInfoBuffer;
     std::unique_ptr<Buffer> m_directionalLightBuffer;

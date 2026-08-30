@@ -157,6 +157,39 @@ enum class OpaqueDirectLightingFragmentArgumentID {
     MaxArgumentID = 3 + kMaxBindlessTextureCount,
 };
 
+enum class TransparentDirectLightingBufferIndex {
+    VertexArguments,
+    FrameUniform,
+    FragmentArguments,
+    MaxBufferBindCount,
+};
+
+enum class TransparentDirectLightingVertexArgumentID {
+    Vertices,
+    RenderPrimitives,
+    MaxArgumentID,
+};
+
+enum class TransparentDirectLightingFragmentArgumentID {
+    Materials,
+    LightListInfo,
+    DirectionalLights,
+    Textures,
+    MaxArgumentID = 3 + kMaxBindlessTextureCount,
+};
+
+enum class TransparentCompositeBufferIndex {
+    FragmentArguments,
+    MaxBufferBindCount,
+};
+
+enum class TransparentCompositeFragmentArgumentID {
+    AccumTexture,
+    RevealTexture,
+    MaxArgumentID,
+};
+
+
 #ifdef __METAL_VERSION__
 struct GPUVertex {
     packed_float3 position;
@@ -194,5 +227,24 @@ struct OpaqueDirectLightingFragmentArguments {
     const device GPUDirectionalLight* directionalLights [[id(OpaqueDirectLightingFragmentArgumentID::DirectionalLights)]];
     const array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(OpaqueDirectLightingFragmentArgumentID::Textures)]];
 };
+
+
+struct TransparentDirectLightingVertexArguments {
+    const device GPUVertex* vertices;
+    const device GPURenderPrimitive* renderPrimitives;
+};
+
+struct TransparentDirectLightingFragmentArguments {
+    const device GPUMaterial* materials [[id(TransparentDirectLightingFragmentArgumentID::Materials)]];
+    const device GPULightListInfo& lightListInfo [[id(TransparentDirectLightingFragmentArgumentID::LightListInfo)]];
+    const device GPUDirectionalLight* directionalLights [[id(TransparentDirectLightingFragmentArgumentID::DirectionalLights)]];
+    const array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(TransparentDirectLightingFragmentArgumentID::Textures)]];
+};
+
+struct TransparentCompositeFragmentArguments {
+    texture2d<float> accumTexture [[id(TransparentCompositeFragmentArgumentID::AccumTexture)]];
+    texture2d<float> revealTexture [[id(TransparentCompositeFragmentArgumentID::RevealTexture)]];
+};
+
 
 #endif

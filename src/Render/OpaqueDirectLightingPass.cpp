@@ -168,7 +168,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             });
             data.depthAttachment = builder.WriteDepth(depthHandle, RenderGraphDepthAttachmentDesc{
                 .loadAction = MTL::LoadActionClear,
-                .storeAction = MTL::StoreActionDontCare,
+                .storeAction = MTL::StoreActionStore,
                 .clearDepth = 1.0,
             });
             data.pipelineState = m_pipelineState;

@@ -1,4 +1,5 @@
 #include "ShaderTypes.h"
+#include "BRDF.metal"
 
 struct OpaqueVertexOut {
     float4 position [[position]];

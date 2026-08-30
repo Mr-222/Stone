@@ -4,6 +4,9 @@ add_library(Render STATIC
         Camera.cpp
         ObjectCullingPass.cpp
         OpaqueDirectLightingPass.cpp
+        TransparentObjectCullingPass.cpp
+        TransparentDirectLightingPass.cpp
+        TransparentCompositePass.cpp
 )
 
 target_include_directories(Render PUBLIC

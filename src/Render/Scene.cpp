@@ -590,10 +590,10 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
 }
 
 void Scene::RegisterBuffers(RenderGraph &graph) {
-    graph.RegisterBuffer("GlobalVertexBuffer", *m_opaqueVertexBuffer);
-    graph.RegisterBuffer("GlobalIndexBuffer", *m_opaqueIndexBuffer);
-    graph.RegisterBuffer("IndexBufferInfoBuffer", *m_opaqueIndexBufferInfoBuffer);
-    graph.RegisterBuffer("RenderPrimitiveBuffer", *m_opaqueRenderPrimitiveBuffer);
+    graph.RegisterBuffer("OpaqueVertexBuffer", *m_opaqueVertexBuffer);
+    graph.RegisterBuffer("OpaqueIndexBuffer", *m_opaqueIndexBuffer);
+    graph.RegisterBuffer("OpaqueIndexBufferInfoBuffer", *m_opaqueIndexBufferInfoBuffer);
+    graph.RegisterBuffer("OpaqueRenderPrimitiveBuffer", *m_opaqueRenderPrimitiveBuffer);
 
     graph.RegisterBuffer("TransparentVertexBuffer", *m_transparentVertexBuffer);
     graph.RegisterBuffer("TransparentIndexBuffer", *m_transparentIndexBuffer);

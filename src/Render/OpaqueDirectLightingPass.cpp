@@ -32,9 +32,9 @@ struct OpaqueDirectLightingPassData {
     MTL::Buffer* vertexArgumentBuffer = nullptr;
     MTL::Buffer* fragmentArgumentBuffer = nullptr;
     RenderGraphResourceHandle frameUniformHandle;
-    RenderGraphResourceHandle globalVertexBufferHandle;
-    RenderGraphResourceHandle globalIndexBufferHandle;
-    RenderGraphResourceHandle renderPrimitiveBufferHandle;
+    RenderGraphResourceHandle opaqueVertexBufferHandle;
+    RenderGraphResourceHandle opaqueIndexBufferHandle;
+    RenderGraphResourceHandle opaqueRenderPrimitiveBufferHandle;
     RenderGraphResourceHandle materialBufferHandle;
     RenderGraphResourceHandle lightListInfoBufferHandle;
     RenderGraphResourceHandle directionalLightBufferHandle;
@@ -149,9 +149,9 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
     RenderGraphResourceHandle depthHandle = graph.DeclareTexture(kSceneDepthImageName);
     RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
-    RenderGraphResourceHandle globalVertexBufferHandle = graph.DeclareBuffer("GlobalVertexBuffer");
-    RenderGraphResourceHandle globalIndexBufferHandle = graph.DeclareBuffer("GlobalIndexBuffer");
-    RenderGraphResourceHandle renderPrimitiveBufferHandle = graph.DeclareBuffer("RenderPrimitiveBuffer");
+    RenderGraphResourceHandle opaqueVertexBufferHandle = graph.DeclareBuffer("OpaqueVertexBuffer");
+    RenderGraphResourceHandle opaqueIndexBufferHandle = graph.DeclareBuffer("OpaqueIndexBuffer");
+    RenderGraphResourceHandle opaqueRenderPrimitiveBufferHandle = graph.DeclareBuffer("OpaqueRenderPrimitiveBuffer");
     RenderGraphResourceHandle materialBufferHandle = graph.DeclareBuffer("MaterialBuffer");
     RenderGraphResourceHandle lightListInfoBufferHandle = graph.DeclareBuffer("LightListInfoBuffer");
     RenderGraphResourceHandle directionalLightBufferHandle = graph.DeclareBuffer("DirectionalLightBuffer");
@@ -177,9 +177,9 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.vertexArgumentBuffer = m_vertexArgumentBuffer->GetNative();
             data.fragmentArgumentBuffer = m_fragmentArgumentBuffer->GetNative();
             data.frameUniformHandle = frameUniformHandle;
-            data.globalVertexBufferHandle = globalVertexBufferHandle;
-            data.globalIndexBufferHandle = globalIndexBufferHandle;
-            data.renderPrimitiveBufferHandle = renderPrimitiveBufferHandle;
+            data.opaqueVertexBufferHandle = opaqueVertexBufferHandle;
+            data.opaqueIndexBufferHandle = opaqueIndexBufferHandle;
+            data.opaqueRenderPrimitiveBufferHandle = opaqueRenderPrimitiveBufferHandle;
             data.materialBufferHandle = materialBufferHandle;
             data.lightListInfoBufferHandle = lightListInfoBufferHandle;
             data.directionalLightBufferHandle = directionalLightBufferHandle;
@@ -188,23 +188,23 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.numPrimitives = m_numPrimitives;
 
             builder.ReadBuffer(frameUniformHandle);
-            builder.ReadBuffer(globalVertexBufferHandle);
-            builder.ReadBuffer(globalIndexBufferHandle);
-            builder.ReadBuffer(renderPrimitiveBufferHandle);
+            builder.ReadBuffer(opaqueVertexBufferHandle);
+            builder.ReadBuffer(opaqueIndexBufferHandle);
+            builder.ReadBuffer(opaqueRenderPrimitiveBufferHandle);
             builder.ReadBuffer(materialBufferHandle);
             builder.ReadBuffer(lightListInfoBufferHandle);
             builder.ReadBuffer(directionalLightBufferHandle);
             builder.ReadIndirectCommandBuffer(indirectCBHandle);
 
-            MTL::Buffer* globalVertexBuffer = resources.GetBuffer(globalVertexBufferHandle);
-            LOG_ERROR_IF(!globalVertexBuffer, "OpaqueDirectLighting: Failed to get global vertex buffer");
+            MTL::Buffer* opaqueVertexBuffer = resources.GetBuffer(opaqueVertexBufferHandle);
+            LOG_ERROR_IF(!opaqueVertexBuffer, "OpaqueDirectLighting: Failed to get opaque vertex buffer");
 
-            MTL::Buffer* renderPrimitiveBuffer = resources.GetBuffer(renderPrimitiveBufferHandle);
-            LOG_ERROR_IF(!renderPrimitiveBuffer, "OpaqueDirectLighting: Failed to get render primitive buffer");
+            MTL::Buffer* opaqueRenderPrimitiveBuffer = resources.GetBuffer(opaqueRenderPrimitiveBufferHandle);
+            LOG_ERROR_IF(!opaqueRenderPrimitiveBuffer, "OpaqueDirectLighting: Failed to get opaque render primitive buffer");
 
             const OpaqueDirectLightingVertexArgumentData vertexArguments {
-                .vertices = globalVertexBuffer->gpuAddress(),
-                .renderPrimitives = renderPrimitiveBuffer->gpuAddress(),
+                .vertices = opaqueVertexBuffer->gpuAddress(),
+                .renderPrimitives = opaqueRenderPrimitiveBuffer->gpuAddress(),
             };
             m_vertexArgumentBuffer->Update(&vertexArguments, sizeof(vertexArguments));
 
@@ -230,18 +230,18 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
         },
         [](const OpaqueDirectLightingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
-            MTL::Buffer* globalVertexBuffer = resources.GetBuffer(data.globalVertexBufferHandle);
-            MTL::Buffer* globalIndexBuffer = resources.GetBuffer(data.globalIndexBufferHandle);
-            MTL::Buffer* renderPrimitiveBuffer = resources.GetBuffer(data.renderPrimitiveBufferHandle);
+            MTL::Buffer* opaqueVertexBuffer = resources.GetBuffer(data.opaqueVertexBufferHandle);
+            MTL::Buffer* opaqueIndexBuffer = resources.GetBuffer(data.opaqueIndexBufferHandle);
+            MTL::Buffer* opaqueRenderPrimitiveBuffer = resources.GetBuffer(data.opaqueRenderPrimitiveBufferHandle);
             MTL::Buffer* materialBuffer = resources.GetBuffer(data.materialBufferHandle);
             MTL::Buffer* lightListInfoBuffer = resources.GetBuffer(data.lightListInfoBufferHandle);
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
 
             LOG_ERROR_IF(!frameUniformBuffer, "OpaqueDirectLighting: Failed to get frame uniform buffer");
-            LOG_ERROR_IF(!globalVertexBuffer, "OpaqueDirectLighting: Failed to get global vertex buffer");
-            LOG_ERROR_IF(!globalIndexBuffer, "OpaqueDirectLighting: Failed to get global index buffer");
-            LOG_ERROR_IF(!renderPrimitiveBuffer, "OpaqueDirectLighting: Failed to get render primitive buffer");
+            LOG_ERROR_IF(!opaqueVertexBuffer, "OpaqueDirectLighting: Failed to get opaque vertex buffer");
+            LOG_ERROR_IF(!opaqueIndexBuffer, "OpaqueDirectLighting: Failed to get opaque index buffer");
+            LOG_ERROR_IF(!opaqueRenderPrimitiveBuffer, "OpaqueDirectLighting: Failed to get opaque render primitive buffer");
             LOG_ERROR_IF(!materialBuffer, "OpaqueDirectLighting: Failed to get material buffer");
             LOG_ERROR_IF(!lightListInfoBuffer, "OpaqueDirectLighting: Failed to get light list info buffer");
             LOG_ERROR_IF(!directionalLightBuffer, "OpaqueDirectLighting: Failed to get directional light buffer");
@@ -252,9 +252,9 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
                 static_cast<NS::UInteger>(OpaqueDirectLightingBufferIndex::FrameUniform));
 
             cmd.AddResource(frameUniformBuffer);
-            cmd.AddResource(globalVertexBuffer);
-            cmd.AddResource(globalIndexBuffer);
-            cmd.AddResource(renderPrimitiveBuffer);
+            cmd.AddResource(opaqueVertexBuffer);
+            cmd.AddResource(opaqueIndexBuffer);
+            cmd.AddResource(opaqueRenderPrimitiveBuffer);
             cmd.AddResource(materialBuffer);
             cmd.AddResource(lightListInfoBuffer);
             cmd.AddResource(directionalLightBuffer);

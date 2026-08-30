@@ -106,6 +106,19 @@ public:
         };
     }
 
+    RenderGraphDepthAttachment ReadDepth(RenderGraphResourceHandle texture, const RenderGraphDepthAttachmentDesc& desc) {
+        m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = texture,
+            .resourceType = RenderGraphResourceType::Texture,
+            .accessType = RenderGraphResourceAccessType::Read,
+        });
+
+        return RenderGraphDepthAttachment{
+            .texture = texture,
+            .desc = desc,
+        };
+    }
+
     const std::vector<RenderGraphResourceAccess>& GetResourceAccesses() const {
         return m_resourceAccesses;
     }

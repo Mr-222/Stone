@@ -12,9 +12,9 @@
 constexpr const char* kObjetcCullingShaderLibrary = STONE_SHADER_DIR "/ObjectCulling.metallib";
 
 struct ObjectCullingPassData {
-    RenderGraphResourceHandle globalIndexBufferHandle;
-    RenderGraphResourceHandle indexBufferInfoBufferHandle;
-    RenderGraphResourceHandle renderPrimitivesBufferHandle;
+    RenderGraphResourceHandle opaqueIndexBufferHandle;
+    RenderGraphResourceHandle opaqueIndexBufferInfoBufferHandle;
+    RenderGraphResourceHandle opaqueRenderPrimitivesBufferHandle;
     RenderGraphResourceHandle visibilityBufferHandle;
     RenderGraphResourceHandle executionRangeBufferHandle;
     RenderGraphResourceHandle icbArgumentBufferHandle;
@@ -138,37 +138,37 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             "IndirectCommandBuffer", frameSlot, *resources.indirectCB);
     }
 
-    RenderGraphResourceHandle globalIndexBufferHandle = graph.DeclareBuffer("GlobalIndexBuffer");
-    RenderGraphResourceHandle indexBufferInfoBufferHandle = graph.DeclareBuffer("IndexBufferInfoBuffer");
-    RenderGraphResourceHandle renderPrimitivesBufferHandle = graph.DeclareBuffer("RenderPrimitiveBuffer");
+    RenderGraphResourceHandle opaqueIndexBufferHandle = graph.DeclareBuffer("OpaqueIndexBuffer");
+    RenderGraphResourceHandle opaqueIndexBufferInfoBufferHandle = graph.DeclareBuffer("OpaqueIndexBufferInfoBuffer");
+    RenderGraphResourceHandle opaqueRenderPrimitivesBufferHandle = graph.DeclareBuffer("OpaqueRenderPrimitiveBuffer");
 
     graph.AddPass<ObjectCullingPassData>(
         "ObjectCulling",
         IsCompute,
         [=](RenderGraphBuilder& builder, ObjectCullingPassData& data, RenderGraphResources&) {
-            data.globalIndexBufferHandle = globalIndexBufferHandle;
-            data.indexBufferInfoBufferHandle = indexBufferInfoBufferHandle;
-            data.renderPrimitivesBufferHandle = renderPrimitivesBufferHandle;
+            data.opaqueIndexBufferHandle = opaqueIndexBufferHandle;
+            data.opaqueIndexBufferInfoBufferHandle = opaqueIndexBufferInfoBufferHandle;
+            data.opaqueRenderPrimitivesBufferHandle = opaqueRenderPrimitivesBufferHandle;
             data.visibilityBufferHandle = visibilitiesBufferHandle;
             data.executionRangeBufferHandle = executionRangeBufferHandle;
             data.icbArgumentBufferHandle = icbArgumentBufferHandle;
             data.indirectCBHandle = indirectCBHandle;
 
-            builder.ReadBuffer(data.globalIndexBufferHandle);
-            builder.ReadBuffer(data.indexBufferInfoBufferHandle);
-            builder.ReadBuffer(data.renderPrimitivesBufferHandle);
+            builder.ReadBuffer(data.opaqueIndexBufferHandle);
+            builder.ReadBuffer(data.opaqueIndexBufferInfoBufferHandle);
+            builder.ReadBuffer(data.opaqueRenderPrimitivesBufferHandle);
             builder.ReadBuffer(data.icbArgumentBufferHandle);
             builder.WriteBuffer(data.visibilityBufferHandle);
             builder.WriteBuffer(data.executionRangeBufferHandle);
             builder.WriteIndirectCommandBuffer(data.indirectCBHandle);
         },
         [this](const ObjectCullingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
-            MTL::Buffer* globalIndexBuffer = resources.GetBuffer(data.globalIndexBufferHandle);
-            LOG_ERROR_IF(!globalIndexBuffer, "Failed to get global index buffer");
-            MTL::Buffer* indexBufferInfoBuffer = resources.GetBuffer(data.indexBufferInfoBufferHandle);
-            LOG_ERROR_IF(!indexBufferInfoBuffer, "Failed to get index buffer info");
-            MTL::Buffer* renderPrimitivesBuffer = resources.GetBuffer(data.renderPrimitivesBufferHandle);
-            LOG_ERROR_IF(!renderPrimitivesBuffer, "Failed to get render primitives buffer");
+            MTL::Buffer* opaqueIndexBuffer = resources.GetBuffer(data.opaqueIndexBufferHandle);
+            LOG_ERROR_IF(!opaqueIndexBuffer, "Failed to get opaque index buffer");
+            MTL::Buffer* opaqueIndexBufferInfoBuffer = resources.GetBuffer(data.opaqueIndexBufferInfoBufferHandle);
+            LOG_ERROR_IF(!opaqueIndexBufferInfoBuffer, "Failed to get opaque index buffer info");
+            MTL::Buffer* opaqueRenderPrimitivesBuffer = resources.GetBuffer(data.opaqueRenderPrimitivesBufferHandle);
+            LOG_ERROR_IF(!opaqueRenderPrimitivesBuffer, "Failed to get opaque render primitives buffer");
             MTL::Buffer* visibilityBuffer = resources.GetBuffer(data.visibilityBufferHandle);
             LOG_ERROR_IF(!visibilityBuffer, "Failed to get visibility buffer");
             MTL::Buffer* executionRangeBuffer = resources.GetBuffer(data.executionRangeBufferHandle);
@@ -182,10 +182,10 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
                 executionRangeBuffer->gpuAddress(),
                 static_cast<NS::UInteger>(ObjectCullingBufferIndex::ExecutionRange));
             m_argumentTable->setAddress(
-                indexBufferInfoBuffer->gpuAddress(),
+                opaqueIndexBufferInfoBuffer->gpuAddress(),
                 static_cast<NS::UInteger>(ObjectCullingBufferIndex::IndexBufferInfo));
             m_argumentTable->setAddress(
-                renderPrimitivesBuffer->gpuAddress(),
+                opaqueRenderPrimitivesBuffer->gpuAddress(),
                 static_cast<NS::UInteger>(ObjectCullingBufferIndex::RenderPrimitives));
             m_argumentTable->setAddress(
                 visibilityBuffer->gpuAddress(),
@@ -194,9 +194,9 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
                 icbArgumentBuffer->gpuAddress(),
                 static_cast<NS::UInteger>(ObjectCullingBufferIndex::ICBContainer));
 
-            cmd.AddResource(globalIndexBuffer);
-            cmd.AddResource(indexBufferInfoBuffer);
-            cmd.AddResource(renderPrimitivesBuffer);
+            cmd.AddResource(opaqueIndexBuffer);
+            cmd.AddResource(opaqueIndexBufferInfoBuffer);
+            cmd.AddResource(opaqueRenderPrimitivesBuffer);
             cmd.AddResource(executionRangeBuffer);
             cmd.AddResource(visibilityBuffer);
             cmd.AddResource(m_cullingParamsBuffer->GetNative());

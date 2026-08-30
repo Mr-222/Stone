@@ -1,0 +1,100 @@
+#include "ShaderTypes.h"
+#include "BRDF.metal"
+
+struct TransparentVertexOut {
+    float4 position [[position]];
+    float3 worldPosition;
+    float3 worldNormal;
+    float2 uv;
+    uint materialIndex [[flat]];
+};
+
+struct TransparentFragmentOut {
+    float4 accum [[color(0)]];
+    float reveal [[color(1)]];
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// Weighted Blended OIT weight function
+// Adapted from McGuire & Bavoil, "Weighted Blended Order-Independent
+// Transparency", Journal of Computer Graphics Techniques, 2013.
+// ────────────────────────────────────────────────────────────────────────────
+
+inline float OITWeight(float clipZ, float alpha) {
+    return clamp(pow(min(1.0f, alpha * 10.0f) + 0.01f, 3.0f) * 1e8f *
+                 pow(1.0f - clipZ * 0.9f, 3.0f), 1e-2f, 3e3f);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Vertex / Fragment
+// ────────────────────────────────────────────────────────────────────────────
+
+vertex TransparentVertexOut transparentDirect_vertex(
+    uint vertexID [[vertex_id]],
+    uint primitiveID [[instance_id]],
+    constant TransparentDirectLightingVertexArguments& args [[buffer(TransparentDirectLightingBufferIndex::VertexArguments)]],
+    constant FrameUniform& frame [[buffer(TransparentDirectLightingBufferIndex::FrameUniform)]])
+{
+    TransparentVertexOut out;
+    const device GPUVertex& gpuVertex = args.vertices[vertexID];
+    const device GPURenderPrimitive& primitive = args.renderPrimitives[primitiveID];
+    const float4 worldPosition = primitive.worldMat * float4(gpuVertex.position, 1.0f);
+    out.position = frame.viewProjection * worldPosition;
+    out.worldPosition = worldPosition.xyz;
+    out.worldNormal = (primitive.worldNormalMat * float4(gpuVertex.normal, 0.0f)).xyz;
+    out.uv = gpuVertex.uv;
+    out.materialIndex = primitive.materialIndex;
+    return out;
+}
+
+fragment TransparentFragmentOut transparentDirect_fragment(
+    TransparentVertexOut in [[stage_in]],
+    constant FrameUniform& frame [[buffer(TransparentDirectLightingBufferIndex::FrameUniform)]],
+    device TransparentDirectLightingFragmentArguments& args [[buffer(TransparentDirectLightingBufferIndex::FragmentArguments)]])
+{
+    constexpr sampler textureSampler(
+        coord::normalized,
+        address::clamp_to_edge,
+        filter::linear,
+        mip_filter::linear);
+
+    const device GPUMaterial& material = args.materials[in.materialIndex];
+
+    const float4 baseColorSample = args.textures[material.baseColorTextureIndex].sample(textureSampler, in.uv) * material.baseColorFactor;
+    const float4 metallicRoughnessSample = args.textures[material.metallicRoughnessTextureIndex].sample(textureSampler, in.uv);
+
+    const float alpha = baseColorSample.a;
+    const float3 baseColor = baseColorSample.rgb;
+    const float perceptualRoughness = clamp(metallicRoughnessSample.g * material.roughnessFactor, 0.045f, 1.0f);
+    const float metallic = saturate(metallicRoughnessSample.b * material.metallicFactor);
+    const float3 diffuseColor = baseColor * (1.0f - metallic);
+    const float3 f0 = mix(float3(0.04f), baseColor, metallic);
+
+    float3 n = SafeNormalize(in.worldNormal, float3(0.0f, 1.0f, 0.0f));
+    const float3 v = SafeNormalize(frame.cameraPosition.xyz - in.worldPosition, n);
+
+    const device GPULightListInfo& lightListInfo = args.lightListInfo;
+    const float3 ambientColor = max(lightListInfo.ambientColorAndIntensity.rgb, 0.0f);
+    const float ambientIntensity = max(lightListInfo.ambientColorAndIntensity.w, 0.0f);
+    float3 luminance = baseColor * ambientColor * ambientIntensity;
+
+    for (uint lightIndex = 0; lightIndex < lightListInfo.directionalLightCount; ++lightIndex) {
+        const device GPUDirectionalLight& light = args.directionalLights[lightIndex];
+        const float3 l = -normalize(light.direction.xyz);
+        const float NoL = saturate(dot(n, l));
+        if (NoL <= 0.0f) continue;
+
+        const float3 brdf = EvaluateBRDF(n, v, l, diffuseColor, f0, perceptualRoughness, NoL);
+        const float3 lightColor = max(light.colorAndIlluminance.rgb, 0.0f);
+        const float lightIlluminance = max(light.colorAndIlluminance.w, 0.0f);
+        luminance += brdf * lightColor * (lightIlluminance * NoL);
+    }
+    
+    // Weighted Blended OIT accumulation
+    float w = OITWeight(in.position.z, alpha);
+
+    TransparentFragmentOut out;
+    out.accum = float4(luminance * alpha * w, alpha * w);
+    out.reveal = alpha;
+    return out;
+}

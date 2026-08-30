@@ -43,4 +43,8 @@
 .idea
 .DS_Store
 
+build/
 Stone.log
+AGENTS.md
+GEMINI.md
+CLAUDE.md

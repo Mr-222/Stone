@@ -11,6 +11,9 @@
 #include "Render/Camera.h"
 #include "Render/ObjectCullingPass.h"
 #include "Render/OpaqueDirectLightingPass.h"
+#include "Render/TransparentObjectCullingPass.h"
+#include "Render/TransparentDirectLightingPass.h"
+#include "Render/TransparentCompositePass.h"
 #include "Render/Scene.h"
 #include "Shader/ShaderTypes.h"
 
@@ -70,16 +73,18 @@ void Renderer::Setup() {
     m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);
 
-    m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->renderPrimitives.size());
-    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>(
-        "OpaqueDirectLighting",
-        *m_metalContext,
-        m_scene->renderPrimitives.size(),
-        m_scene->GetTextures());
+    m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->opaqueRenderPrimitives.size());
+    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->opaqueRenderPrimitives.size(), m_scene->GetTextures());
+    m_renderGraph->AddPassNode<TransparentObjectCullingPass>("TransparentObjectCulling", *m_metalContext, m_scene->transparentRenderPrimitives.size());
+    m_renderGraph->AddPassNode<TransparentDirectLightingPass>("TransparentDirectLighting", *m_metalContext, m_scene->transparentRenderPrimitives.size(), m_scene->GetTextures());
+    m_renderGraph->AddPassNode<TransparentCompositePass>("TransparentComposite", *m_metalContext);
 
-    m_renderGraph->SetDependencyGraph({{
-        "OpaqueDirectLighting", { "ObjectCulling" }
-    }});
+    m_renderGraph->SetDependencyGraph({
+        { "OpaqueDirectLighting", { "ObjectCulling" } },
+        { "TransparentObjectCulling", { "ObjectCulling" } },
+        { "TransparentDirectLighting", { "OpaqueDirectLighting", "TransparentObjectCulling" } },
+        { "TransparentComposite", { "TransparentDirectLighting" } }
+    });
 
     m_renderGraph->Compile();
 
@@ -168,16 +173,9 @@ void Renderer::Run() {
         // register depth buffer
         const uint32_t frameSlot = m_metalContext->GetCurrentFrameSlot();
         std::unique_ptr<Texture>& depthTexture = m_depthTextures[frameSlot];
-        if (!depthTexture ||
-            depthTexture->GetWidth() != backbufferTexture->width() ||
-            depthTexture->GetHeight() != backbufferTexture->height())
-        {
-            MTL::TextureDescriptor* depthDescriptor = MTL::TextureDescriptor::texture2DDescriptor(
-                MTL::PixelFormatDepth32Float,
-                backbufferTexture->width(),
-                backbufferTexture->height(),
-                false);
-            depthDescriptor->setStorageMode(MTL::StorageModeMemoryless);
+        if (!depthTexture || depthTexture->GetWidth() != backbufferTexture->width() || depthTexture->GetHeight() != backbufferTexture->height()) {
+            MTL::TextureDescriptor* depthDescriptor = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatDepth32Float, backbufferTexture->width(), backbufferTexture->height(), false);
+            depthDescriptor->setStorageMode(MTL::StorageModePrivate);
             depthDescriptor->setUsage(MTL::TextureUsageRenderTarget);
 
             depthTexture = std::make_unique<Texture>(m_metalContext->GetDevice(), depthDescriptor);

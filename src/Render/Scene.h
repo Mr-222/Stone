@@ -6,25 +6,11 @@
 #include <memory>
 #include <string>
 
+#include "Light.h"
 #include "Mesh.h"
 #include "Core/Buffer.h"
 #include "Core/RenderGraph.h"
 #include "Core/Texture.h"
-
-struct DirectionalLight
-{
-    // Direction in which the light rays travel. The shader uses its negation
-    // as the direction from the shaded point toward the light.
-    glm::vec3 direction;
-    glm::vec3 color;
-    float illuminance;
-};
-
-struct AmbientLight
-{
-    glm::vec3 color;
-    float intensity;
-};
 
 class Scene {
 public:
@@ -47,6 +33,8 @@ public:
     std::vector<RenderObject> objects;
     std::vector<SceneMaterial> materials;
     std::vector<DirectionalLight> directionalLights;
+    std::vector<PointLight> pointLights;
+    std::vector<SpotLight> spotLights;
     AmbientLight ambientLight;
 
 private:
@@ -84,6 +72,8 @@ private:
     std::unique_ptr<Buffer> m_materialBuffer;
     std::unique_ptr<Buffer> m_lightListInfoBuffer;
     std::unique_ptr<Buffer> m_directionalLightBuffer;
+    std::unique_ptr<Buffer> m_pointLightBuffer;
+    std::unique_ptr<Buffer> m_spotLightBuffer;
 
     std::vector<std::vector<std::byte>> m_encodedImages;
     std::vector<TextureSource> m_textureSources;

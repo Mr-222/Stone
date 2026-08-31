@@ -20,6 +20,8 @@ struct TransparentDirectLightingFragmentArgumentData {
     MTL::GPUAddress materials;
     MTL::GPUAddress lightListInfo;
     MTL::GPUAddress directionalLights;
+    MTL::GPUAddress pointLights;
+    MTL::GPUAddress spotLights;
     std::array<MTL::ResourceID, kMaxBindlessTextureCount> textures;
 };
 
@@ -39,6 +41,8 @@ struct TransparentDirectLightingPassData {
     RenderGraphResourceHandle materialBufferHandle;
     RenderGraphResourceHandle lightListInfoBufferHandle;
     RenderGraphResourceHandle directionalLightBufferHandle;
+    RenderGraphResourceHandle pointLightBufferHandle;
+    RenderGraphResourceHandle spotLightBufferHandle;
     RenderGraphResourceHandle transparentIndirectCBHandle;
     std::vector<MTL::Texture*> textures;
     int numPrimitives;
@@ -172,6 +176,8 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle materialBufferHandle = graph.DeclareBuffer("MaterialBuffer");
     RenderGraphResourceHandle lightListInfoBufferHandle = graph.DeclareBuffer("LightListInfoBuffer");
     RenderGraphResourceHandle directionalLightBufferHandle = graph.DeclareBuffer("DirectionalLightBuffer");
+    RenderGraphResourceHandle pointLightBufferHandle = graph.DeclareBuffer("PointLightBuffer");
+    RenderGraphResourceHandle spotLightBufferHandle = graph.DeclareBuffer("SpotLightBuffer");
     RenderGraphResourceHandle transparentIndirectCBHandle = graph.DeclareIndirectCommandBuffer("TransparentIndirectCommandBuffer");
 
     graph.AddPass<TransparentDirectLightingPassData>(
@@ -205,6 +211,8 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.materialBufferHandle = materialBufferHandle;
             data.lightListInfoBufferHandle = lightListInfoBufferHandle;
             data.directionalLightBufferHandle = directionalLightBufferHandle;
+            data.pointLightBufferHandle = pointLightBufferHandle;
+            data.spotLightBufferHandle = spotLightBufferHandle;
             data.transparentIndirectCBHandle = transparentIndirectCBHandle;
             data.textures = m_textures;
             data.numPrimitives = m_numPrimitives;
@@ -216,6 +224,8 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             builder.ReadBuffer(materialBufferHandle);
             builder.ReadBuffer(lightListInfoBufferHandle);
             builder.ReadBuffer(directionalLightBufferHandle);
+            builder.ReadBuffer(pointLightBufferHandle);
+            builder.ReadBuffer(spotLightBufferHandle);
             builder.ReadIndirectCommandBuffer(transparentIndirectCBHandle);
 
             MTL::Buffer* transparentVertexBuffer = resources.GetBuffer(transparentVertexBufferHandle);
@@ -232,21 +242,22 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* materialBuffer = resources.GetBuffer(materialBufferHandle);
             MTL::Buffer* lightListInfoBuffer = resources.GetBuffer(lightListInfoBufferHandle);
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(directionalLightBufferHandle);
+            MTL::Buffer* pointLightBuffer = resources.GetBuffer(pointLightBufferHandle);
+            MTL::Buffer* spotLightBuffer = resources.GetBuffer(spotLightBufferHandle);
 
-            if (materialBuffer && lightListInfoBuffer && directionalLightBuffer && !m_textures.empty()) {
-                TransparentDirectLightingFragmentArgumentData fragmentArguments {
-                    .materials = materialBuffer->gpuAddress(),
-                    .lightListInfo = lightListInfoBuffer->gpuAddress(),
-                    .directionalLights = directionalLightBuffer->gpuAddress(),
-                };
-                for (size_t i = 0; i < fragmentArguments.textures.size(); ++i) {
-                    MTL::Texture* texture = i < m_textures.size()
-                        ? m_textures[i]
-                        : m_textures.front();
-                    fragmentArguments.textures[i] = texture->gpuResourceID();
-                }
-                m_fragmentArgumentBuffer->Update(&fragmentArguments, sizeof(fragmentArguments));
+            TransparentDirectLightingFragmentArgumentData fragmentArguments {
+                .materials = materialBuffer->gpuAddress(),
+                .lightListInfo = lightListInfoBuffer->gpuAddress(),
+                .directionalLights = directionalLightBuffer->gpuAddress(),
+                .pointLights = pointLightBuffer->gpuAddress(),
+                .spotLights = spotLightBuffer->gpuAddress(),
+            };
+            for (size_t i = 0; i < fragmentArguments.textures.size(); ++i) {
+                MTL::Texture* texture = i < m_textures.size() ? m_textures[i] : m_textures.front();
+                fragmentArguments.textures[i] = texture->gpuResourceID();
             }
+            m_fragmentArgumentBuffer->Update(&fragmentArguments, sizeof(fragmentArguments));
+
         },
         [](const TransparentDirectLightingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
@@ -256,6 +267,8 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* materialBuffer = resources.GetBuffer(data.materialBufferHandle);
             MTL::Buffer* lightListInfoBuffer = resources.GetBuffer(data.lightListInfoBufferHandle);
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
+            MTL::Buffer* pointLightBuffer = resources.GetBuffer(data.pointLightBufferHandle);
+            MTL::Buffer* spotLightBuffer = resources.GetBuffer(data.spotLightBufferHandle);
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.transparentIndirectCBHandle);
 
             LOG_ERROR_IF(!frameUniformBuffer, "TransparentDirectLighting: Failed to get frame uniform buffer");
@@ -265,6 +278,8 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!materialBuffer, "TransparentDirectLighting: Failed to get material buffer");
             LOG_ERROR_IF(!lightListInfoBuffer, "TransparentDirectLighting: Failed to get light list info buffer");
             LOG_ERROR_IF(!directionalLightBuffer, "TransparentDirectLighting: Failed to get directional light buffer");
+            LOG_ERROR_IF(!pointLightBuffer, "TransparentDirectLighting: Failed to get point light buffer");
+            LOG_ERROR_IF(!spotLightBuffer, "TransparentDirectLighting: Failed to get spot light buffer");
             LOG_ERROR_IF(!indirectCB, "TransparentDirectLighting: Failed to get indirect command buffer");
 
             data.argumentTable->setAddress(frameUniformBuffer->gpuAddress(), static_cast<NS::UInteger>(TransparentDirectLightingBufferIndex::FrameUniform));
@@ -276,6 +291,8 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             cmd.AddResource(materialBuffer);
             cmd.AddResource(lightListInfoBuffer);
             cmd.AddResource(directionalLightBuffer);
+            cmd.AddResource(pointLightBuffer);
+            cmd.AddResource(spotLightBuffer);
             cmd.AddResource(indirectCB);
             cmd.AddResource(data.vertexArgumentBuffer);
             cmd.AddResource(data.fragmentArgumentBuffer);

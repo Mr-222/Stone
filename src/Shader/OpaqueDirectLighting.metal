@@ -1,5 +1,6 @@
 #include "ShaderTypes.h"
 #include "BRDF.metal"
+#include "Lighting.metal"
 
 struct OpaqueVertexOut {
     float4 position [[position]];
@@ -72,6 +73,35 @@ fragment float4 opaqueDirect_fragment(
         const float lightIlluminance = max(light.colorAndIlluminance.w, 0.0f);
 
         luminance += brdf * lightColor * (lightIlluminance * NoL);
+    }
+
+    for (uint lightIndex = 0; lightIndex < lightListInfo.pointLightCount; ++lightIndex) {
+        const device GPUPointLight& light = args.pointLights[lightIndex];
+        const float3 posToLight = light.positionAndRange.xyz - in.worldPosition;
+        const float distSq = dot(posToLight, posToLight);
+        const float3 l = SafeNormalize(posToLight, n);
+        const float NoL = saturate(dot(n, l));
+        if (NoL <= 0.0f) continue;
+        const float attenuation = DistanceAttenuation(distSq, 1.0f / light.positionAndRange.w);
+        const float3 brdf = EvaluateBRDF(n, v, l, diffuseColor, f0, perceptualRoughness, NoL);
+        const float3 lightColor = max(light.colorAndIntensity.rgb, 0.0f);
+        const float lightIntensity = max(light.colorAndIntensity.w, 0.0f);
+        luminance += brdf * lightColor * (lightIntensity * attenuation * NoL);
+    }
+
+    for (uint lightIndex = 0; lightIndex < lightListInfo.spotLightCount; ++lightIndex) {
+        const device GPUSpotLight& light = args.spotLights[lightIndex];
+        const float3 posToLight = light.positionAndRange.xyz - in.worldPosition;
+        const float distSq = dot(posToLight, posToLight);
+        const float3 l = SafeNormalize(posToLight, n);
+        const float NoL = saturate(dot(n, l));
+        if (NoL <= 0.0f) continue;
+        const float distAtten = DistanceAttenuation(distSq, 1.0f / light.positionAndRange.w);
+        const float spotAtten = SpotAngleAttenuation(l, normalize(light.direction.xyz), light.scaleOffset.x, light.scaleOffset.y);
+        const float3 brdf = EvaluateBRDF(n, v, l, diffuseColor, f0, perceptualRoughness, NoL);
+        const float3 lightColor = max(light.colorAndIntensity.rgb, 0.0f);
+        const float lightIntensity = max(light.colorAndIntensity.w, 0.0f);
+        luminance += brdf * lightColor * (lightIntensity * distAtten * spotAtten * NoL);
     }
 
     return float4(luminance, 1.0f);

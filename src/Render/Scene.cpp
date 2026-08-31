@@ -569,8 +569,8 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
 
     const GPULightListInfo lightListInfo {
         .directionalLightCount = static_cast<uint32_t>(directionalLightEntries.size()),
-        .pointLightCount = 0,
-        .spotLightCount = 0,
+        .pointLightCount = static_cast<uint32_t>(pointLights.size()),
+        .spotLightCount = static_cast<uint32_t>(spotLights.size()),
         .pad0 = 0,
         .ambientColorAndIntensity = glm::vec4(ambientLight.color, ambientLight.intensity),
     };
@@ -586,6 +586,44 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     m_directionalLightBuffer = std::make_unique<Buffer>(device, directionalLightEntries.size() * sizeof(GPUDirectionalLight), MTL::ResourceStorageModePrivate);
     m_directionalLightBuffer->GetNative()->setLabel(NS::String::string("Directional Light Buffer", NS::UTF8StringEncoding));
     m_directionalLightBuffer->UpdateStaged(directionalLightEntries.data(), directionalLightEntries.size() * sizeof(GPUDirectionalLight), 0, commandBufferPool, queue);
+
+    // --- Point Lights ---
+    std::vector<GPUPointLight> pointLightEntries;
+    pointLightEntries.reserve(pointLights.size());
+    for (const PointLight& light : pointLights) {
+        pointLightEntries.push_back(GPUPointLight{
+            .positionAndRange = glm::vec4(light.position, light.range),
+            .colorAndIntensity = glm::vec4(light.color, light.intensity),
+        });
+    }
+    if (pointLightEntries.empty())
+        pointLightEntries.emplace_back();
+
+    m_pointLightBuffer = std::make_unique<Buffer>(device, pointLightEntries.size() * sizeof(GPUPointLight), MTL::ResourceStorageModePrivate);
+    m_pointLightBuffer->GetNative()->setLabel(NS::String::string("Point Light Buffer", NS::UTF8StringEncoding));
+    m_pointLightBuffer->UpdateStaged(pointLightEntries.data(), pointLightEntries.size() * sizeof(GPUPointLight), 0, commandBufferPool, queue);
+
+    // --- Spot Lights ---
+    std::vector<GPUSpotLight> spotLightEntries;
+    spotLightEntries.reserve(spotLights.size());
+    for (const SpotLight& light : spotLights) {
+        const float cosInner = std::cos(light.innerAngle);
+        const float cosOuter = std::cos(light.outerAngle);
+        const float angleScale = 1.0f / std::max(cosInner - cosOuter, 1e-5f);
+        const float angleOffset = -cosOuter * angleScale;
+        spotLightEntries.push_back(GPUSpotLight{
+            .positionAndRange = glm::vec4(light.position, light.range),
+            .direction = glm::vec4(glm::normalize(light.direction), 0.0f),
+            .colorAndIntensity = glm::vec4(light.color, light.intensity),
+            .scaleOffset = glm::vec4(angleScale, angleOffset, 0.0f, 0.0f),
+        });
+    }
+    if (spotLightEntries.empty())
+        spotLightEntries.emplace_back();
+
+    m_spotLightBuffer = std::make_unique<Buffer>(device, spotLightEntries.size() * sizeof(GPUSpotLight), MTL::ResourceStorageModePrivate);
+    m_spotLightBuffer->GetNative()->setLabel(NS::String::string("Spot Light Buffer", NS::UTF8StringEncoding));
+    m_spotLightBuffer->UpdateStaged(spotLightEntries.data(), spotLightEntries.size() * sizeof(GPUSpotLight), 0, commandBufferPool, queue);
 
 }
 
@@ -603,4 +641,6 @@ void Scene::RegisterBuffers(RenderGraph &graph) {
     graph.RegisterBuffer("MaterialBuffer", *m_materialBuffer);
     graph.RegisterBuffer("LightListInfoBuffer", *m_lightListInfoBuffer);
     graph.RegisterBuffer("DirectionalLightBuffer", *m_directionalLightBuffer);
+    graph.RegisterBuffer("PointLightBuffer", *m_pointLightBuffer);
+    graph.RegisterBuffer("SpotLightBuffer", *m_spotLightBuffer);
 }

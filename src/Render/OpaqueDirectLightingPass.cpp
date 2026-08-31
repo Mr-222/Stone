@@ -20,6 +20,8 @@ struct OpaqueDirectLightingFragmentArgumentData {
     MTL::GPUAddress materials;
     MTL::GPUAddress lightListInfo;
     MTL::GPUAddress directionalLights;
+    MTL::GPUAddress pointLights;
+    MTL::GPUAddress spotLights;
     std::array<MTL::ResourceID, kMaxBindlessTextureCount> textures;
 };
 
@@ -38,6 +40,8 @@ struct OpaqueDirectLightingPassData {
     RenderGraphResourceHandle materialBufferHandle;
     RenderGraphResourceHandle lightListInfoBufferHandle;
     RenderGraphResourceHandle directionalLightBufferHandle;
+    RenderGraphResourceHandle pointLightBufferHandle;
+    RenderGraphResourceHandle spotLightBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
     std::vector<MTL::Texture*> textures;
     int numPrimitives;
@@ -155,6 +159,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle materialBufferHandle = graph.DeclareBuffer("MaterialBuffer");
     RenderGraphResourceHandle lightListInfoBufferHandle = graph.DeclareBuffer("LightListInfoBuffer");
     RenderGraphResourceHandle directionalLightBufferHandle = graph.DeclareBuffer("DirectionalLightBuffer");
+    RenderGraphResourceHandle pointLightBufferHandle = graph.DeclareBuffer("PointLightBuffer");
+    RenderGraphResourceHandle spotLightBufferHandle = graph.DeclareBuffer("SpotLightBuffer");
     RenderGraphResourceHandle indirectCBHandle = graph.DeclareIndirectCommandBuffer("IndirectCommandBuffer");
 
     graph.AddPass<OpaqueDirectLightingPassData>(
@@ -183,6 +189,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.materialBufferHandle = materialBufferHandle;
             data.lightListInfoBufferHandle = lightListInfoBufferHandle;
             data.directionalLightBufferHandle = directionalLightBufferHandle;
+            data.pointLightBufferHandle = pointLightBufferHandle;
+            data.spotLightBufferHandle = spotLightBufferHandle;
             data.indirectCBHandle = indirectCBHandle;
             data.textures = m_textures;
             data.numPrimitives = m_numPrimitives;
@@ -194,6 +202,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             builder.ReadBuffer(materialBufferHandle);
             builder.ReadBuffer(lightListInfoBufferHandle);
             builder.ReadBuffer(directionalLightBufferHandle);
+            builder.ReadBuffer(pointLightBufferHandle);
+            builder.ReadBuffer(spotLightBufferHandle);
             builder.ReadIndirectCommandBuffer(indirectCBHandle);
 
             MTL::Buffer* opaqueVertexBuffer = resources.GetBuffer(opaqueVertexBufferHandle);
@@ -214,16 +224,20 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!lightListInfoBuffer, "OpaqueDirectLighting: Failed to get light list info buffer");
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(directionalLightBufferHandle);
             LOG_ERROR_IF(!directionalLightBuffer, "OpaqueDirectLighting: Failed to get directional light buffer");
+            MTL::Buffer* pointLightBuffer = resources.GetBuffer(pointLightBufferHandle);
+            LOG_ERROR_IF(!pointLightBuffer, "OpaqueDirectLighting: Failed to get point light buffer");
+            MTL::Buffer* spotLightBuffer = resources.GetBuffer(spotLightBufferHandle);
+            LOG_ERROR_IF(!spotLightBuffer, "OpaqueDirectLighting: Failed to get spot light buffer");
 
             OpaqueDirectLightingFragmentArgumentData fragmentArguments {
                 .materials = materialBuffer->gpuAddress(),
                 .lightListInfo = lightListInfoBuffer->gpuAddress(),
                 .directionalLights = directionalLightBuffer->gpuAddress(),
+                .pointLights = pointLightBuffer->gpuAddress(),
+                .spotLights = spotLightBuffer->gpuAddress(),
             };
             for (size_t textureIndex = 0; textureIndex < fragmentArguments.textures.size(); ++textureIndex) {
-                MTL::Texture* texture = textureIndex < m_textures.size()
-                    ? m_textures[textureIndex]
-                    : m_textures.front();
+                MTL::Texture* texture = textureIndex < m_textures.size() ? m_textures[textureIndex] : m_textures.front();
                 fragmentArguments.textures[textureIndex] = texture->gpuResourceID();
             }
             m_fragmentArgumentBuffer->Update(&fragmentArguments, sizeof(fragmentArguments));
@@ -236,6 +250,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* materialBuffer = resources.GetBuffer(data.materialBufferHandle);
             MTL::Buffer* lightListInfoBuffer = resources.GetBuffer(data.lightListInfoBufferHandle);
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
+            MTL::Buffer* pointLightBuffer = resources.GetBuffer(data.pointLightBufferHandle);
+            MTL::Buffer* spotLightBuffer = resources.GetBuffer(data.spotLightBufferHandle);
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
 
             LOG_ERROR_IF(!frameUniformBuffer, "OpaqueDirectLighting: Failed to get frame uniform buffer");
@@ -245,6 +261,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!materialBuffer, "OpaqueDirectLighting: Failed to get material buffer");
             LOG_ERROR_IF(!lightListInfoBuffer, "OpaqueDirectLighting: Failed to get light list info buffer");
             LOG_ERROR_IF(!directionalLightBuffer, "OpaqueDirectLighting: Failed to get directional light buffer");
+            LOG_ERROR_IF(!pointLightBuffer, "OpaqueDirectLighting: Failed to get point light buffer");
+            LOG_ERROR_IF(!spotLightBuffer, "OpaqueDirectLighting: Failed to get spot light buffer");
             LOG_ERROR_IF(!indirectCB, "OpaqueDirectLighting: Failed to get indirect command buffer");
 
             data.argumentTable->setAddress(
@@ -258,6 +276,8 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             cmd.AddResource(materialBuffer);
             cmd.AddResource(lightListInfoBuffer);
             cmd.AddResource(directionalLightBuffer);
+            cmd.AddResource(pointLightBuffer);
+            cmd.AddResource(spotLightBuffer);
             cmd.AddResource(indirectCB);
             cmd.AddResource(data.vertexArgumentBuffer);
             cmd.AddResource(data.fragmentArgumentBuffer);

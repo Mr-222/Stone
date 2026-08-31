@@ -58,17 +58,36 @@ void Renderer::Setup() {
         DirectionalLight{
             .direction = glm::vec3(0.5f, -1.0f, 1.0f),
             .color = glm::vec3(1.0f, 0.9f, 0.75f),
-            .illuminance = 10.0f,
+            .illuminance = 2.0f,
         },
         DirectionalLight{
             .direction = glm::vec3(-0.8f, -0.4f, -1.0f),
             .color = glm::vec3(0.35f, 0.55f, 1.0f),
-            .illuminance = 3.0f,
+            .illuminance = 2.0f,
         },
     };
     m_scene->ambientLight = AmbientLight{
         .color = glm::vec3(1.0f),
         .intensity = 0.03f,
+    };
+    m_scene->pointLights = {
+        PointLight{
+            .position = glm::vec3(0.5f, 0.3f, 0.5f),
+            .color = glm::vec3(1.0f, 0.8f, 0.6f),
+            .intensity = 2.0f,
+            .range = 5.0f,
+        },
+    };
+    m_scene->spotLights = {
+        SpotLight{
+            .position = glm::vec3(0.0f, 0.5f, -9.0f),
+            .direction = glm::vec3(0.0f, -1.0f, 0.5f),
+            .color = glm::vec3(0.5f, 0.5f, 1.0f),
+            .intensity = 5.0f,
+            .range = 5.0f,
+            .innerAngle = glm::radians(15.0f),
+            .outerAngle = glm::radians(30.0f),
+        },
     };
     m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);

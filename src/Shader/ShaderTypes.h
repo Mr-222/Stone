@@ -24,6 +24,18 @@ struct GPUDirectionalLight {
     float4 colorAndIlluminance;
 };
 
+struct GPUPointLight {
+    float4 positionAndRange;     // xyz = world position, w = range
+    float4 colorAndIntensity;    // rgb = color, w = luminous intensity (candela)
+};
+
+struct GPUSpotLight {
+    float4 positionAndRange;     // xyz = world position, w = range
+    float4 direction;            // xyz = direction (normalized), w = unused
+    float4 colorAndIntensity;    // rgb = color, w = luminous intensity (candela)
+    float4 scaleOffset;          // x = angleScale, y = angleOffset, zw = unused
+};
+
 struct GPURenderPrimitive {
     uint32_t baseVertex;
     uint32_t firstIndex;
@@ -64,6 +76,18 @@ struct GPUDirectionalLight {
     glm::vec4 colorAndIlluminance;
 };
 
+struct GPUPointLight {
+    glm::vec4 positionAndRange;     // xyz = world position, w = range
+    glm::vec4 colorAndIntensity;    // rgb = color, w = luminous intensity (candela)
+};
+
+struct GPUSpotLight {
+    glm::vec4 positionAndRange;     // xyz = world position, w = range
+    glm::vec4 direction;            // xyz = direction (normalized), w = unused
+    glm::vec4 colorAndIntensity;    // rgb = color, w = luminous intensity (candela)
+    glm::vec4 scaleOffset;          // x = angleScale, y = angleOffset, zw = unused
+};
+
 struct GPURenderPrimitive {
     uint32_t baseVertex;
     uint32_t firstIndex;
@@ -84,6 +108,8 @@ struct GPUMaterial {
 static_assert(sizeof(FrameUniform) == 80);
 static_assert(sizeof(GPULightListInfo) == 32);
 static_assert(sizeof(GPUDirectionalLight) == 32);
+static_assert(sizeof(GPUPointLight) == 32);
+static_assert(sizeof(GPUSpotLight) == 64);
 static_assert(sizeof(GPURenderPrimitive) == 144);
 static_assert(sizeof(GPUMaterial) == 32);
 #endif
@@ -153,8 +179,10 @@ enum class OpaqueDirectLightingFragmentArgumentID {
     Materials,
     LightListInfo,
     DirectionalLights,
+    PointLights,
+    SpotLights,
     Textures,
-    MaxArgumentID = 3 + kMaxBindlessTextureCount,
+    MaxArgumentID = 5 + kMaxBindlessTextureCount,
 };
 
 enum class TransparentDirectLightingBufferIndex {
@@ -174,8 +202,10 @@ enum class TransparentDirectLightingFragmentArgumentID {
     Materials,
     LightListInfo,
     DirectionalLights,
+    PointLights,
+    SpotLights,
     Textures,
-    MaxArgumentID = 3 + kMaxBindlessTextureCount,
+    MaxArgumentID = 5 + kMaxBindlessTextureCount,
 };
 
 enum class TransparentCompositeBufferIndex {
@@ -225,6 +255,8 @@ struct OpaqueDirectLightingFragmentArguments {
     const device GPUMaterial* materials [[id(OpaqueDirectLightingFragmentArgumentID::Materials)]];
     const device GPULightListInfo& lightListInfo [[id(OpaqueDirectLightingFragmentArgumentID::LightListInfo)]];
     const device GPUDirectionalLight* directionalLights [[id(OpaqueDirectLightingFragmentArgumentID::DirectionalLights)]];
+    const device GPUPointLight* pointLights [[id(OpaqueDirectLightingFragmentArgumentID::PointLights)]];
+    const device GPUSpotLight* spotLights [[id(OpaqueDirectLightingFragmentArgumentID::SpotLights)]];
     const array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(OpaqueDirectLightingFragmentArgumentID::Textures)]];
 };
 
@@ -238,6 +270,8 @@ struct TransparentDirectLightingFragmentArguments {
     const device GPUMaterial* materials [[id(TransparentDirectLightingFragmentArgumentID::Materials)]];
     const device GPULightListInfo& lightListInfo [[id(TransparentDirectLightingFragmentArgumentID::LightListInfo)]];
     const device GPUDirectionalLight* directionalLights [[id(TransparentDirectLightingFragmentArgumentID::DirectionalLights)]];
+    const device GPUPointLight* pointLights [[id(TransparentDirectLightingFragmentArgumentID::PointLights)]];
+    const device GPUSpotLight* spotLights [[id(TransparentDirectLightingFragmentArgumentID::SpotLights)]];
     const array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(TransparentDirectLightingFragmentArgumentID::Textures)]];
 };
 

@@ -1,6 +1,7 @@
 #include "TransparentCompositePass.h"
 
 #include "Core/Buffer.h"
+#include "Core/MetalContext.h"
 #include "Core/RenderGraph.h"
 #include "Shader/ShaderTypes.h"
 #include "Utility/Logger.h"
@@ -17,7 +18,6 @@ struct TransparentCompositePassData {
     RenderGraphColorAttachment colorAttachment;
     MTL::RenderPipelineState* pipelineState = nullptr;
     MTL4::ArgumentTable* argumentTable = nullptr;
-    MTL::Buffer* fragmentArgumentBuffer = nullptr;
     RenderGraphResourceHandle accumHandle;
     RenderGraphResourceHandle revealHandle;
 };
@@ -30,6 +30,7 @@ TransparentCompositePass::~TransparentCompositePass() {
 }
 
 void TransparentCompositePass::Setup(MetalContext& context) {
+    m_context = &context;
     MTL::Device* device = context.GetDevice();
     NS::Error* error = nullptr;
 
@@ -62,9 +63,13 @@ void TransparentCompositePass::Setup(MetalContext& context) {
     m_pipelineState = compiler->newRenderPipelineState(pipelineDescriptor, taskOptions, &error);
     LOG_ERROR_IF(!m_pipelineState, "Failed to create transparent composite pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    const TransparentCompositeFragmentArgumentData fragmentArguments{};
-    m_fragmentArgumentBuffer = std::make_unique<Buffer>(device, &fragmentArguments, sizeof(fragmentArguments), MTL::ResourceStorageModeShared);
-    m_fragmentArgumentBuffer->GetNative()->setLabel(NS::String::string("TransparentComposite Fragment Argument Buffer", NS::UTF8StringEncoding));
+    const uint32_t frameSlotCount = context.GetFrameSlotCount();
+    m_fragmentArgumentBuffers.resize(frameSlotCount);
+    for (uint32_t i = 0; i < frameSlotCount; ++i) {
+        const TransparentCompositeFragmentArgumentData fragmentArguments{};
+        m_fragmentArgumentBuffers[i] = std::make_unique<Buffer>(device, &fragmentArguments, sizeof(fragmentArguments), MTL::ResourceStorageModeShared);
+        m_fragmentArgumentBuffers[i]->GetNative()->setLabel(NS::String::string("TransparentComposite Fragment Argument Buffer", NS::UTF8StringEncoding));
+    }
 
     MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
     argumentTableDescriptor->setLabel(NS::String::string("TransparentComposite Argument Table", NS::UTF8StringEncoding));
@@ -72,8 +77,6 @@ void TransparentCompositePass::Setup(MetalContext& context) {
     argumentTableDescriptor->setMaxBufferBindCount(static_cast<NS::UInteger>(TransparentCompositeBufferIndex::MaxBufferBindCount));
     m_argumentTable = device->newArgumentTable(argumentTableDescriptor, &error);
     LOG_ERROR_IF(!m_argumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
-
-    m_argumentTable->setAddress(m_fragmentArgumentBuffer->GetGPUAddress(), static_cast<NS::UInteger>(TransparentCompositeBufferIndex::FragmentArguments));
 
     compiler->release();
 }
@@ -96,12 +99,12 @@ void TransparentCompositePass::AddToGraph(RenderGraph& graph) {
             data.revealHandle = revealHandle;
             data.pipelineState = m_pipelineState;
             data.argumentTable = m_argumentTable;
-            data.fragmentArgumentBuffer = m_fragmentArgumentBuffer->GetNative();
 
             builder.ReadTexture(accumHandle);
             builder.ReadTexture(revealHandle);
         },
         [this](const TransparentCompositePassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
+            const uint32_t frameSlot = m_context->GetCurrentFrameSlot();
             MTL::Texture* colorTexture = resources.GetTexture(data.colorAttachment.texture);
             MTL::Texture* accumTexture = resources.GetTexture(data.accumHandle);
             MTL::Texture* revealTexture = resources.GetTexture(data.revealHandle);
@@ -115,9 +118,11 @@ void TransparentCompositePass::AddToGraph(RenderGraph& graph) {
                 .accumTexture = accumTexture->gpuResourceID(),
                 .revealTexture = revealTexture->gpuResourceID(),
             };
-            m_fragmentArgumentBuffer->Update(&fragmentArguments, sizeof(fragmentArguments));
+            m_fragmentArgumentBuffers[frameSlot]->Update(&fragmentArguments, sizeof(fragmentArguments));
 
-            cmd.AddResource(data.fragmentArgumentBuffer);
+            data.argumentTable->setAddress(m_fragmentArgumentBuffers[frameSlot]->GetGPUAddress(), static_cast<NS::UInteger>(TransparentCompositeBufferIndex::FragmentArguments));
+
+            cmd.AddResource(m_fragmentArgumentBuffers[frameSlot]->GetNative());
             cmd.AddResource(accumTexture);
             cmd.AddResource(revealTexture);
             cmd.AddResource(colorTexture);

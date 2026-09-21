@@ -219,6 +219,16 @@ enum class TransparentCompositeFragmentArgumentID {
     MaxArgumentID,
 };
 
+enum class TransmittanceBufferIndex {
+    KernelArguments,
+    MaxBufferBindCount,
+};
+
+enum class AtmosphereTransmittanceLUTKernelArgumentID {
+    TransmittanceTexture,
+    TexSize,
+    MaxArgumentID,
+};
 
 #ifdef __METAL_VERSION__
 struct GPUVertex {
@@ -280,5 +290,9 @@ struct TransparentCompositeFragmentArguments {
     texture2d<float> revealTexture [[id(TransparentCompositeFragmentArgumentID::RevealTexture)]];
 };
 
+struct AtmosphereTransmittanceLUTKernelArguments {
+    texture2d<float, access::write> transmittanceLUT [[id(AtmosphereTransmittanceLUTKernelArgumentID::TransmittanceTexture)]];
+    uint2 texSize                          [[id(AtmosphereTransmittanceLUTKernelArgumentID::TexSize)]];
+};
 
 #endif

@@ -14,6 +14,7 @@
 #include "Render/TransparentObjectCullingPass.h"
 #include "Render/TransparentDirectLightingPass.h"
 #include "Render/TransparentCompositePass.h"
+#include "Render/AtmosphereLUT.h"
 #include "Render/Scene.h"
 #include "Shader/ShaderTypes.h"
 
@@ -92,6 +93,7 @@ void Renderer::Setup() {
     m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);
 
+    m_renderGraph->AddPassNode<AtmosphereLUT>("AtmosphereLUT", *m_metalContext);
     m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->opaqueRenderPrimitives.size());
     m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->opaqueRenderPrimitives.size(), m_scene->GetTextures());
     m_renderGraph->AddPassNode<TransparentObjectCullingPass>("TransparentObjectCulling", *m_metalContext, m_scene->transparentRenderPrimitives.size());
@@ -101,7 +103,7 @@ void Renderer::Setup() {
     m_renderGraph->SetDependencyGraph({
         { "OpaqueDirectLighting", { "ObjectCulling" } },
         { "TransparentObjectCulling", { "ObjectCulling" } },
-        { "TransparentDirectLighting", { "OpaqueDirectLighting", "TransparentObjectCulling" } },
+        { "TransparentDirectLighting", { "OpaqueDirectLighting", "TransparentObjectCulling", "AtmosphereLUT" } },
         { "TransparentComposite", { "TransparentDirectLighting" } }
     });
 

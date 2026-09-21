@@ -7,6 +7,7 @@ add_library(Render STATIC
         TransparentObjectCullingPass.cpp
         TransparentDirectLightingPass.cpp
         TransparentCompositePass.cpp
+        AtmosphereLUT.cpp
 )
 
 target_include_directories(Render PUBLIC

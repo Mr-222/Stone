@@ -10,8 +10,6 @@ struct OpaqueVertexOut {
     uint materialIndex [[flat]];
 };
 
-
-
 vertex OpaqueVertexOut opaqueDirect_vertex(
     uint vertexID [[vertex_id]],
     uint primitiveID [[instance_id]],

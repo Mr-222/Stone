@@ -120,6 +120,7 @@ void TransparentCompositePass::AddToGraph(RenderGraph& graph) {
             cmd.AddResource(data.fragmentArgumentBuffer);
             cmd.AddResource(accumTexture);
             cmd.AddResource(revealTexture);
+            cmd.AddResource(colorTexture);
 
             MTL4::RenderPassDescriptor* passDescriptor = MTL4::RenderPassDescriptor::alloc()->init()->autorelease();
             MTL::RenderPassColorAttachmentDescriptor* colorAttachment = passDescriptor->colorAttachments()->object(0);

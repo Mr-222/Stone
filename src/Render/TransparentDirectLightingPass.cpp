@@ -305,6 +305,9 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!accumTexture, "TransparentDirectLighting: No accum target.");
             LOG_ERROR_IF(!revealTexture, "TransparentDirectLighting: No reveal target.");
             LOG_ERROR_IF(!depthTexture, "TransparentDirectLighting: No depth target.");
+            cmd.AddResource(accumTexture);
+            cmd.AddResource(revealTexture);
+            cmd.AddResource(depthTexture);
 
             MTL4::RenderPassDescriptor* passDescriptor = MTL4::RenderPassDescriptor::alloc()->init()->autorelease();
 

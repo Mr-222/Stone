@@ -13,12 +13,30 @@ constant constexpr float R_ground = 6360; // km
 constant constexpr float R_top    = 6460;
 constant constexpr float H        = ConstexprSqrt(R_top * R_top - R_ground * R_ground); // Maximum Geometric Horizon Distance
 
-// Standard atmospheric extinction coefficients (in km^-1)
-constant constexpr float3 sigmaRayleigh     = float3(0.005802, 0.013558, 0.033100);
-constant constexpr float sigmaMieScattering = 0.003996;
-constant constexpr float sigmaMieAbsorption = 0.004400;
-constant constexpr float sigmaMie           = sigmaMieScattering + sigmaMieAbsorption; // 0.008396
-constant constexpr float3 sigmaOzone        = float3(0.000650, 0.001881, 0.000085);
+void GetMediumCoefficients(float altitude, thread float3 &sigma_s, thread float3 &sigma_t, thread float3 &sigma_s_R, thread float3 &sigma_s_M)
+{
+    float h = max(0.0f, altitude);
+
+    float densityR = exp(-h / 8.0f);
+    float densityM = exp(-h / 1.2f);
+    float densityO = max(0.0f, 1.0f - abs(h - 25.0f) / 15.0f);
+
+    // Standard atmospheric extinction coefficients (in km^-1)
+    constexpr float3 baseSigmaRayleigh = float3(0.005802f, 0.013558f, 0.033100f);
+    constexpr float  baseSigmaMieS     = 0.003996f;
+    constexpr float  baseSigmaMieA     = 0.004400f;
+    constexpr float3 baseSigmaOzoneA   = float3(0.000650f, 0.001881f, 0.000085f);
+
+    sigma_s_R = baseSigmaRayleigh * densityR;
+    sigma_s_M = float3(baseSigmaMieS) * densityM;
+    sigma_s   = sigma_s_R + sigma_s_M;
+
+    float3 sigma_a_M = float3(baseSigmaMieA) * densityM;
+    float3 sigma_a_O = baseSigmaOzoneA * densityO;
+
+    // scattering + absorption
+    sigma_t = sigma_s + sigma_a_M + sigma_a_O;
+}
 
 float3 threadToAtmosphereParam(uint2 threadIdx, uint width, uint height)
 {
@@ -43,18 +61,6 @@ float3 threadToAtmosphereParam(uint2 threadIdx, uint width, uint height)
     return float3(r, mu, d);
 }
 
-float densityRayleigh(float h) { return exp(-max(h, 0.0) / 8.0); }
-float densityMie(float h)      { return exp(-max(h, 0.0) / 1.2); }
-
-float densityOzone(float h) { return max(0.0, 1.0 - abs(h - 25.0) / 15.0); }
-
-float3 GetExtinction(float h)
-{
-    return sigmaRayleigh * densityRayleigh(h) +
-           sigmaMie * densityMie(h) +
-           sigmaOzone * densityOzone(h);
-}
-
 float3 IntegrateTransmittance(float3 pos, float3 dir, float tMax)
 {
     if (tMax <= 0.0) return float3(1.0);
@@ -68,7 +74,9 @@ float3 IntegrateTransmittance(float3 pos, float3 dir, float tMax)
     for (uint i = 0; i < stepCount; ++i)
     {
         float h = length(p) - R_ground;
-        opticalDepth += GetExtinction(h) * dt;
+        float3 sigma_s, sigma_t, sigma_s_R, sigma_s_M;
+        GetMediumCoefficients(h, sigma_s, sigma_t, sigma_s_R, sigma_s_M);
+        opticalDepth += sigma_t * dt;
         p += dir * dt;
     }
 

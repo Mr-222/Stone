@@ -13,7 +13,7 @@
 #define TRANS_WIDTH 256
 #define TRANS_HEIGHT 64
 
-constexpr const char* kAtmosphereLUTShaderLibrary = STONE_SHADER_DIR "/AtmosphereScattering.metallib";
+constexpr const char* kAtmosphereLUTShaderLibrary = STONE_SHADER_DIR "/AtmosphereLUT.metallib";
 
 struct TransmittanceArgumentData {
     MTL::ResourceID transmittanceLUT;

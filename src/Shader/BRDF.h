@@ -3,8 +3,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-constant constexpr float PI = 3.14159265358979323846f;
-constant constexpr float InvPI = 1.0f / PI;
+#include "Utility.h"
 
 inline float D_GGX(float NoH, float roughness) {
     const float roughnessSquared = roughness * roughness;

@@ -1,6 +1,6 @@
 #include "ShaderTypes.h"
-#include "BRDF.metal"
-#include "Lighting.metal"
+#include "BRDF.h"
+#include "Lighting.h"
 
 struct TransparentVertexOut {
     float4 position [[position]];

@@ -52,6 +52,12 @@ struct GPUMaterial {
     uint32_t baseColorTextureIndex;
     uint32_t metallicRoughnessTextureIndex;
 };
+
+struct AtmosphereUniforms {
+    packed_float3 planetCenter;
+    float cameraAltitude;
+    packed_float3 groundAlbedo;
+};
 #else
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -105,6 +111,12 @@ struct GPUMaterial {
     uint32_t metallicRoughnessTextureIndex;
 };
 
+struct AtmosphereUniforms {
+    glm::vec3 planetCenter;
+    float cameraAltitude;
+    glm::vec3 groundAlbedo;
+};
+
 static_assert(sizeof(FrameUniform) == 80);
 static_assert(sizeof(GPULightListInfo) == 32);
 static_assert(sizeof(GPUDirectionalLight) == 32);
@@ -112,6 +124,7 @@ static_assert(sizeof(GPUPointLight) == 32);
 static_assert(sizeof(GPUSpotLight) == 64);
 static_assert(sizeof(GPURenderPrimitive) == 144);
 static_assert(sizeof(GPUMaterial) == 32);
+static_assert(sizeof(AtmosphereUniforms) == 28);
 #endif
 
 struct IndirectCommandBufferExecutionRange {
@@ -226,7 +239,19 @@ enum class TransmittanceBufferIndex {
 
 enum class AtmosphereTransmittanceLUTKernelArgumentID {
     TransmittanceTexture,
-    TexSize,
+    MaxArgumentID,
+};
+
+enum class SkyViewBufferIndex {
+    KernelArguments,
+    MaxBufferBindCount,
+};
+
+enum class AtmosphereSkyViewLUTKernelArgumentID {
+    SkyViewTexture,
+    TransmittanceTexture,
+    DirectionalLights,
+    Param,
     MaxArgumentID,
 };
 
@@ -292,7 +317,13 @@ struct TransparentCompositeFragmentArguments {
 
 struct AtmosphereTransmittanceLUTKernelArguments {
     texture2d<float, access::write> transmittanceLUT [[id(AtmosphereTransmittanceLUTKernelArgumentID::TransmittanceTexture)]];
-    uint2 texSize                          [[id(AtmosphereTransmittanceLUTKernelArgumentID::TexSize)]];
+};
+
+struct AtmosphereSkyViewLUTKernelArguments {
+    texture2d<float, access::write>  skyViewLUT [[id(AtmosphereSkyViewLUTKernelArgumentID::SkyViewTexture)]];
+    texture2d<float, access::sample> transmittanceLUT [[id(AtmosphereSkyViewLUTKernelArgumentID::TransmittanceTexture)]];
+    const device GPUDirectionalLight* directionalLights [[id(AtmosphereSkyViewLUTKernelArgumentID::DirectionalLights)]];
+    const device AtmosphereUniforms& param [[id(AtmosphereSkyViewLUTKernelArgumentID::Param)]];
 };
 
 #endif

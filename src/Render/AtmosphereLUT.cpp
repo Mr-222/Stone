@@ -17,7 +17,6 @@ constexpr const char* kAtmosphereLUTShaderLibrary = STONE_SHADER_DIR "/Atmospher
 
 struct TransmittanceArgumentData {
     MTL::ResourceID transmittanceLUT;
-    glm::uvec2 texSize;
 };
 
 struct PassData {
@@ -56,7 +55,6 @@ void AtmosphereLUT::Setup(MetalContext &context) {
     const TransmittanceArgumentData transmittanceData
     {
         m_transmittanceLUT->GetNative()->gpuResourceID(),
-        glm::uvec2 { m_transmittanceLUT->GetWidth(), m_transmittanceLUT->GetHeight() },
     };
     m_transmittanceParamsBuffer = std::make_unique<Buffer>(device, sizeof(TransmittanceArgumentData), MTL::ResourceStorageModeShared);
     m_transmittanceParamsBuffer->Update(&transmittanceData, sizeof(TransmittanceArgumentData));

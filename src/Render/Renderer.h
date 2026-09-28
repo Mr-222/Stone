@@ -12,6 +12,7 @@ class OpaqueDirectLightingPass;
 class TransparentObjectCullingPass;
 class TransparentDirectLightingPass;
 class TransparentCompositePass;
+class AtmosphereLUT;
 class Scene;
 class Camera;
 class Buffer;
@@ -41,6 +42,7 @@ private:
     std::unique_ptr<TransparentObjectCullingPass> m_transparentObjectCullingPass;
     std::unique_ptr<TransparentDirectLightingPass> m_transparentDirectLightingPass;
     std::unique_ptr<TransparentCompositePass> m_transparentCompositePass;
+    std::unique_ptr<AtmosphereLUT> m_atmosphereLUTPass;
     std::unique_ptr<Scene> m_scene;
 
     std::unique_ptr<Camera> m_camera;

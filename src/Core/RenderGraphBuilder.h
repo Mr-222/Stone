@@ -48,6 +48,14 @@ public:
         });
     }
 
+    void WriteTexture(RenderGraphResourceHandle texture) {
+        m_resourceAccesses.push_back(RenderGraphResourceAccess{
+            .resource = texture,
+            .resourceType = RenderGraphResourceType::Texture,
+            .accessType = RenderGraphResourceAccessType::Write,
+        });
+    }
+
     void ReadBuffer(RenderGraphResourceHandle buffer) {
         m_resourceAccesses.push_back(RenderGraphResourceAccess{
             .resource = buffer,

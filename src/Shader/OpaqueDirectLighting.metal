@@ -1,6 +1,6 @@
 #include "ShaderTypes.h"
-#include "BRDF.metal"
-#include "Lighting.metal"
+#include "BRDF.h"
+#include "Lighting.h"
 
 struct OpaqueVertexOut {
     float4 position [[position]];
@@ -9,8 +9,6 @@ struct OpaqueVertexOut {
     float2 uv;
     uint materialIndex [[flat]];
 };
-
-
 
 vertex OpaqueVertexOut opaqueDirect_vertex(
     uint vertexID [[vertex_id]],

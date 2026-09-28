@@ -49,6 +49,7 @@ void TransparentObjectCullingPass::Setup(MetalContext& context, const int numPri
     });
 
     MTL4::ComputePipelineDescriptor* pipelineDescriptor = MTL4::ComputePipelineDescriptor::alloc()->init()->autorelease();
+    pipelineDescriptor->setLabel(NS::String::string("ObjectCulling", NS::UTF8StringEncoding));
     pipelineDescriptor->setComputeFunctionDescriptor(MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "objectCulling_main"));
 
     MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);

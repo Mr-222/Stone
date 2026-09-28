@@ -286,6 +286,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
 
             MTL::Texture* colorTexture = resources.GetTexture(data.colorAttachment.texture);
             MTL::Texture* depthTexture = resources.GetTexture(data.depthAttachment.texture);
+
             LOG_ERROR_IF(!colorTexture, "OpaqueDirectLighting: No color target.");
             LOG_ERROR_IF(!depthTexture, "OpaqueDirectLighting: No depth target.");
             LOG_ERROR_IF(depthTexture->pixelFormat() != MTL::PixelFormatDepth32Float,
@@ -302,6 +303,9 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!data.pipelineState, "OpaqueDirectLighting: Pipeline state is null.");
             LOG_ERROR_IF(!data.depthStencilState, "OpaqueDirectLighting: Depth-stencil state is null.");
             LOG_ERROR_IF(!data.argumentTable, "OpaqueDirectLighting: Argument table is null.");
+
+            cmd.AddResource(colorTexture);
+            cmd.AddResource(depthTexture);
 
             MTL4::RenderPassDescriptor* passDescriptor = MTL4::RenderPassDescriptor::alloc()->init()->autorelease();
             MTL::RenderPassColorAttachmentDescriptor* colorAttachment = passDescriptor->colorAttachments()->object(0);

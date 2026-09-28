@@ -13,10 +13,20 @@
 #define TRANS_WIDTH 256
 #define TRANS_HEIGHT 64
 
+#define SKYVIEW_WIDTH 200
+#define SKYVIEW_HEIGHT 100
+
 constexpr const char* kAtmosphereLUTShaderLibrary = STONE_SHADER_DIR "/AtmosphereLUT.metallib";
 
 struct TransmittanceArgumentData {
     MTL::ResourceID transmittanceLUT;
+};
+
+struct SkyViewArgumentData {
+    MTL::ResourceID skyViewLUT;
+    MTL::ResourceID transmittanceLUT;
+    MTL::GPUAddress directionalLights;
+    MTL::GPUAddress param;
 };
 
 struct PassData {
@@ -24,93 +34,176 @@ struct PassData {
     MTL4::ArgumentTable*      transmittanceArgumentTable = nullptr;
     MTL::Buffer*             transmittanceArgumentBuffer = nullptr;
     RenderGraphResourceHandle transmittanceLUTHandle;
+
+    MTL::ComputePipelineState* skyViewPipelineState = nullptr;
+    MTL4::ArgumentTable*      skyViewArgumentTable = nullptr;
+    MTL::Buffer*             skyViewArgumentBuffer = nullptr;
+    MTL::Buffer*             skyViewAtmosphereUniformsBuffer = nullptr;
+    RenderGraphResourceHandle skyViewLUTHandle;
+    RenderGraphResourceHandle directionalLightBufferHandle;
+    RenderGraphResourceHandle frameUniformHandle;
 };
 
 void AtmosphereLUT::Setup(MetalContext &context) {
     MTL::Device* device = context.GetDevice();
     NS::Error* error = nullptr;
 
-    // TransmittanceLUT pipeline
     ShaderLibrary shaderLibrary = LoadShaderLibrary(device, kAtmosphereLUTShaderLibrary, {
-        "transmittance_main"
+        "transmittance_main", "skyView_main"
     });
-
-    MTL4::ComputePipelineDescriptor* pipelineDescriptor = MTL4::ComputePipelineDescriptor::alloc()->init()->autorelease();
-    pipelineDescriptor->setLabel(NS::String::string("AtmosphereTransmittanceLUT", NS::UTF8StringEncoding));
-    pipelineDescriptor->setComputeFunctionDescriptor(MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "transmittance_main"));
 
     MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);
     LOG_ERROR_IF(!compiler, "Failed to create MTL::Compiler");
     MTL4::CompilerTaskOptions* taskOptions = MTL4::CompilerTaskOptions::alloc()->init()->autorelease();
-    m_transmittanceLUTPipelineState = compiler->newComputePipelineState(pipelineDescriptor, taskOptions, &error);
-    LOG_ERROR_IF(!m_transmittanceLUTPipelineState, "Failed to create atmosphere transmittanceLUT compute pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    // transmittance LUT
-    MTL::TextureDescriptor* transmittanceLUTDescriptor = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormat::PixelFormatRGBA16Float, TRANS_WIDTH, TRANS_HEIGHT, false);
-    transmittanceLUTDescriptor->setStorageMode(MTL::StorageModePrivate);
-    transmittanceLUTDescriptor->setUsage(MTL::TextureUsageShaderWrite | MTL::TextureUsageShaderRead);
-    m_transmittanceLUT = std::make_unique<Texture>(device, transmittanceLUTDescriptor);
-    m_transmittanceLUT->GetNative()->setLabel(NS::String::string("Atmosphere TransmittanceLUT", NS::UTF8StringEncoding));
-
-    const TransmittanceArgumentData transmittanceData
+    // ==================== TransmittanceLUT ====================
     {
-        m_transmittanceLUT->GetNative()->gpuResourceID(),
-    };
-    m_transmittanceParamsBuffer = std::make_unique<Buffer>(device, sizeof(TransmittanceArgumentData), MTL::ResourceStorageModeShared);
-    m_transmittanceParamsBuffer->Update(&transmittanceData, sizeof(TransmittanceArgumentData));
-    m_transmittanceParamsBuffer->GetNative()->setLabel(NS::String::string("AtmosphereTransmittanceLUT Argument Buffer", NS::UTF8StringEncoding));
+        MTL4::ComputePipelineDescriptor* pipelineDescriptor = MTL4::ComputePipelineDescriptor::alloc()->init()->autorelease();
+        pipelineDescriptor->setLabel(NS::String::string("AtmosphereTransmittanceLUT", NS::UTF8StringEncoding));
+        pipelineDescriptor->setComputeFunctionDescriptor(MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "transmittance_main"));
+        m_transmittanceLUTPipelineState = compiler->newComputePipelineState(pipelineDescriptor, taskOptions, &error);
+        LOG_ERROR_IF(!m_transmittanceLUTPipelineState, "Failed to create atmosphere transmittanceLUT compute pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-    MTL4::ArgumentTableDescriptor* argumentTableDescriptor = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
-    argumentTableDescriptor->setLabel(NS::String::string("AtmosphereTransmittanceLUT", NS::UTF8StringEncoding));
-    argumentTableDescriptor->setInitializeBindings(true);
-    argumentTableDescriptor->setMaxBufferBindCount(static_cast<NS::UInteger>(TransmittanceBufferIndex::MaxBufferBindCount));
-    m_transmittanceArgumentTable = device->newArgumentTable(argumentTableDescriptor, &error);
-    LOG_ERROR_IF(!m_transmittanceArgumentTable, "Failed to create argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
+        MTL::TextureDescriptor* texDesc = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormat::PixelFormatRGBA16Float, TRANS_WIDTH, TRANS_HEIGHT, false);
+        texDesc->setStorageMode(MTL::StorageModePrivate);
+        texDesc->setUsage(MTL::TextureUsageShaderWrite | MTL::TextureUsageShaderRead);
+        m_transmittanceLUT = std::make_unique<Texture>(device, texDesc);
+        m_transmittanceLUT->GetNative()->setLabel(NS::String::string("Atmosphere TransmittanceLUT", NS::UTF8StringEncoding));
 
-    m_transmittanceArgumentTable->setAddress(m_transmittanceParamsBuffer->GetGPUAddress(), static_cast<NS::UInteger>(TransmittanceBufferIndex::KernelArguments));
+        const TransmittanceArgumentData transmittanceData { m_transmittanceLUT->GetNative()->gpuResourceID() };
+        m_transmittanceParamsBuffer = std::make_unique<Buffer>(device, sizeof(TransmittanceArgumentData), MTL::ResourceStorageModeShared);
+        m_transmittanceParamsBuffer->Update(&transmittanceData, sizeof(TransmittanceArgumentData));
+        m_transmittanceParamsBuffer->GetNative()->setLabel(NS::String::string("AtmosphereTransmittanceLUT Argument Buffer", NS::UTF8StringEncoding));
 
-    // TODO: SkyViewLUT Pass
+        MTL4::ArgumentTableDescriptor* argTableDesc = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
+        argTableDesc->setLabel(NS::String::string("AtmosphereTransmittanceLUT", NS::UTF8StringEncoding));
+        argTableDesc->setInitializeBindings(true);
+        argTableDesc->setMaxBufferBindCount(static_cast<NS::UInteger>(TransmittanceBufferIndex::MaxBufferBindCount));
+        m_transmittanceArgumentTable = device->newArgumentTable(argTableDesc, &error);
+        LOG_ERROR_IF(!m_transmittanceArgumentTable, "Failed to create transmittance argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
+        m_transmittanceArgumentTable->setAddress(m_transmittanceParamsBuffer->GetGPUAddress(), static_cast<NS::UInteger>(TransmittanceBufferIndex::KernelArguments));
+    }
+
+    // ==================== SkyViewLUT ====================
+    {
+        MTL4::ComputePipelineDescriptor* pipelineDescriptor = MTL4::ComputePipelineDescriptor::alloc()->init()->autorelease();
+        pipelineDescriptor->setLabel(NS::String::string("AtmosphereSkyViewLUT", NS::UTF8StringEncoding));
+        pipelineDescriptor->setComputeFunctionDescriptor(MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "skyView_main"));
+        m_skyViewLUTPipelineState = compiler->newComputePipelineState(pipelineDescriptor, taskOptions, &error);
+        LOG_ERROR_IF(!m_skyViewLUTPipelineState, "Failed to create atmosphere skyViewLUT compute pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
+
+        MTL::TextureDescriptor* texDesc = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormat::PixelFormatRGBA16Float, SKYVIEW_WIDTH, SKYVIEW_HEIGHT, false);
+        texDesc->setStorageMode(MTL::StorageModePrivate);
+        texDesc->setUsage(MTL::TextureUsageShaderWrite | MTL::TextureUsageShaderRead);
+        m_skyViewLUT = std::make_unique<Texture>(device, texDesc);
+        m_skyViewLUT->GetNative()->setLabel(NS::String::string("Atmosphere SkyViewLUT", NS::UTF8StringEncoding));
+
+        // Argument buffer — will be updated per frame with scene resource IDs/addresses
+        m_skyViewParamsBuffer = std::make_unique<Buffer>(device, sizeof(SkyViewArgumentData), MTL::ResourceStorageModeShared);
+        m_skyViewParamsBuffer->GetNative()->setLabel(NS::String::string("AtmosphereSkyViewLUT Argument Buffer", NS::UTF8StringEncoding));
+
+        // AtmosphereUniforms constant buffer — updated per frame
+        m_skyViewAtmosphereUniformsBuffer = std::make_unique<Buffer>(device, sizeof(AtmosphereUniforms), MTL::ResourceStorageModeShared);
+        m_skyViewAtmosphereUniformsBuffer->GetNative()->setLabel(NS::String::string("AtmosphereUniforms Buffer", NS::UTF8StringEncoding));
+
+        MTL4::ArgumentTableDescriptor* argTableDesc = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
+        argTableDesc->setLabel(NS::String::string("AtmosphereSkyViewLUT", NS::UTF8StringEncoding));
+        argTableDesc->setInitializeBindings(true);
+        argTableDesc->setMaxBufferBindCount(static_cast<NS::UInteger>(SkyViewBufferIndex::MaxBufferBindCount));
+        m_skyViewArgumentTable = device->newArgumentTable(argTableDesc, &error);
+        LOG_ERROR_IF(!m_skyViewArgumentTable, "Failed to create skyView argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
+        m_skyViewArgumentTable->setAddress(m_skyViewParamsBuffer->GetGPUAddress(), static_cast<NS::UInteger>(SkyViewBufferIndex::KernelArguments));
+    }
 
     compiler->release();
 }
 
 void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
     RenderGraphResourceHandle transmittanceLUTHandle = graph.RegisterTexture("AtmosphereTransmittanceLUT", *m_transmittanceLUT);
+    RenderGraphResourceHandle skyViewLUTHandle = graph.RegisterTexture("AtmosphereSkyViewLUT", *m_skyViewLUT);
+    RenderGraphResourceHandle directionalLightBufferHandle = graph.DeclareBuffer("DirectionalLightBuffer");
+    RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
 
     graph.AddPass<PassData>(
         "AtmosphereLUT",
         IsCompute,
         [=, this](RenderGraphBuilder& builder, PassData& data, RenderGraphResources&) {
-            data.transmittancePiplineState           = m_transmittanceLUTPipelineState;
-            data.transmittanceArgumentTable          = m_transmittanceArgumentTable;
-            data.transmittanceArgumentBuffer         = m_transmittanceParamsBuffer->GetNative();
-            data.transmittanceLUTHandle = transmittanceLUTHandle;
+            data.transmittancePiplineState   = m_transmittanceLUTPipelineState;
+            data.transmittanceArgumentTable  = m_transmittanceArgumentTable;
+            data.transmittanceArgumentBuffer = m_transmittanceParamsBuffer->GetNative();
+            data.transmittanceLUTHandle      = transmittanceLUTHandle;
+
+            data.skyViewPipelineState             = m_skyViewLUTPipelineState;
+            data.skyViewArgumentTable             = m_skyViewArgumentTable;
+            data.skyViewArgumentBuffer            = m_skyViewParamsBuffer->GetNative();
+            data.skyViewAtmosphereUniformsBuffer  = m_skyViewAtmosphereUniformsBuffer->GetNative();
+            data.skyViewLUTHandle                 = skyViewLUTHandle;
+            data.directionalLightBufferHandle     = directionalLightBufferHandle;
+            data.frameUniformHandle               = frameUniformHandle;
 
             builder.WriteTexture(transmittanceLUTHandle);
+            builder.WriteTexture(skyViewLUTHandle);
+            builder.ReadBuffer(directionalLightBufferHandle);
+            builder.ReadBuffer(frameUniformHandle);
         },
         [this](const PassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
+            MTL::Texture* transmittanceLUT = resources.GetTexture(data.transmittanceLUTHandle);
+            MTL::Texture* skyViewLUT = resources.GetTexture(data.skyViewLUTHandle);
+            MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
+            MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
+
+            constexpr float kRground = 6360.0f; // km
+            const glm::vec3 planetCenter = glm::vec3(0.0f, -kRground, 0.0f);
+
+            const auto* fu = static_cast<const FrameUniform*>(frameUniformBuffer->contents());
+            const glm::vec3 cameraWorldPosKm = glm::vec3(fu->cameraPosition) * 0.001f;
+            float cameraAltitude = std::max(0.001f, glm::length(cameraWorldPosKm - planetCenter) - kRground);
+
+            const AtmosphereUniforms atmoUniforms {
+                .planetCenter = planetCenter,
+                .cameraAltitude = cameraAltitude,
+                .groundAlbedo = glm::vec3(0.3f, 0.3f, 0.3f),
+            };
+            memcpy(data.skyViewAtmosphereUniformsBuffer->contents(), &atmoUniforms, sizeof(AtmosphereUniforms));
+
+            const SkyViewArgumentData skyViewArgs {
+                .skyViewLUT = skyViewLUT->gpuResourceID(),
+                .transmittanceLUT = transmittanceLUT->gpuResourceID(),
+                .directionalLights = directionalLightBuffer->gpuAddress(),
+                .param = data.skyViewAtmosphereUniformsBuffer->gpuAddress(),
+            };
+            memcpy(data.skyViewArgumentBuffer->contents(), &skyViewArgs, sizeof(SkyViewArgumentData));
+
             if (!hasInit) {
-                MTL::Texture* transmittanceLUT = resources.GetTexture(data.transmittanceLUTHandle);
-
                 cmd.AddResource(data.transmittanceArgumentBuffer);
-                cmd.AddResource(transmittanceLUT);
+            }
+            cmd.AddResource(data.skyViewArgumentBuffer);
+            cmd.AddResource(data.skyViewAtmosphereUniformsBuffer);
+            cmd.AddResource(skyViewLUT);
+            cmd.AddResource(transmittanceLUT);
+            cmd.AddResource(directionalLightBuffer);
+            cmd.AddResource(frameUniformBuffer);
 
-                MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
+            MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
+
+            // ---- Transmittance LUT (compute once) ----
+            if (!hasInit) {
                 computeEncoder->setComputePipelineState(data.transmittancePiplineState);
                 computeEncoder->setArgumentTable(data.transmittanceArgumentTable);
-                NS::UInteger width = data.transmittancePiplineState->threadExecutionWidth();
-                NS::UInteger height = data.transmittancePiplineState->maxTotalThreadsPerThreadgroup() / width;
-                MTL::Size gridSize = MTL::Size(TRANS_WIDTH, TRANS_HEIGHT, 1);
-                MTL::Size threadGroupSize = MTL::Size(width, height, 1);
-                computeEncoder->dispatchThreads(gridSize, threadGroupSize);
-                computeEncoder->endEncoding();
-
+                NS::UInteger tew = data.transmittancePiplineState->threadExecutionWidth();
+                NS::UInteger teh = data.transmittancePiplineState->maxTotalThreadsPerThreadgroup() / tew;
+                computeEncoder->dispatchThreads(MTL::Size(TRANS_WIDTH, TRANS_HEIGHT, 1), MTL::Size(tew, teh, 1));
+                computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
                 hasInit = true;
             }
-            else {
-                auto encoder = cmd.BeginComputePass(); // dummy encoder
-                encoder->endEncoding();
-            }
+
+            // ---- SkyView LUT (every frame) ----
+            computeEncoder->setComputePipelineState(data.skyViewPipelineState);
+            computeEncoder->setArgumentTable(data.skyViewArgumentTable);
+            NS::UInteger tew = data.skyViewPipelineState->threadExecutionWidth();
+            NS::UInteger teh = data.skyViewPipelineState->maxTotalThreadsPerThreadgroup() / tew;
+            computeEncoder->dispatchThreads(MTL::Size(SKYVIEW_WIDTH, SKYVIEW_HEIGHT, 1), MTL::Size(tew, teh, 1));
+            computeEncoder->endEncoding();
         }
     );
 }

@@ -183,11 +183,12 @@ kernel void skyView_main(
 
     // Unproject the gaze vector and its origin (with the camera positioned on the Y-axis)
     float3 rayDir = UVToViewDirection(uv);
-    float3 rayOrigin = float3(0.0f, R_ground + args.param.cameraAltitude, 0.0f);
+    float3 rayOrigin = float3(0.0f, args.param.cameraAltitude, 0.0f);
+    float3 planetCenter = float3(args.param.planetCenter);
 
     // Determine whether the gaze ray hits the ground
-    float distToGround = RaySphereIntersect(rayOrigin, rayDir, R_ground);
-    float distToTop    = RaySphereIntersect(rayOrigin, rayDir, R_top);
+    float distToGround = RaySphereIntersect(rayOrigin - planetCenter, rayDir, R_ground);
+    float distToTop    = RaySphereIntersect(rayOrigin - planetCenter, rayDir, R_top);
 
     bool hitsGround = (distToGround > 0.0f);
     float rayLength = hitsGround ? distToGround : distToTop;
@@ -206,10 +207,10 @@ kernel void skyView_main(
 
     // Treat first directional light as sun
     GPUDirectionalLight sun = args.directionalLights[0];
-    float3 sunDir  = sun.direction.xyz;
+    float3 sunDir  = -normalize(sun.direction.xyz);
     float3 sunIlluminance = sun.colorAndIlluminance.xyz * sun.colorAndIlluminance.w;
 
-    float cosTheta = dot(rayDir, sunDir);
+    float cosTheta = clamp(dot(rayDir, sunDir), -1.0f, 1.0f);
     float phaseR   = PhaseRayleigh(cosTheta);
     float phaseM   = PhaseMie(cosTheta);
 
@@ -218,12 +219,12 @@ kernel void skyView_main(
         // Take the sampling point at the center of the differential element
         float t = ((float)i + 0.5f) * stepSize;
         float3 samplePos = rayOrigin + rayDir * t;
-        float sampleAltitude = length(samplePos) - R_ground;
+        float sampleAltitude = length(samplePos - planetCenter) - R_ground;
 
         float3 sigma_s, sigma_t, sigma_s_R, sigma_s_M;
         GetMediumCoefficients(sampleAltitude, sigma_s, sigma_t, sigma_s_R, sigma_s_M);
 
-        float3 transmittanceToSun = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, samplePos, float3(args.param.planetCenter), sunDir);
+        float3 transmittanceToSun = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, samplePos, planetCenter, sunDir);
 
         // Single in-scattering source term
         float3 inScattering = (sigma_s_R * phaseR + sigma_s_M * phaseM) * transmittanceToSun * sunIlluminance;
@@ -255,12 +256,12 @@ kernel void skyView_main(
     if (hitsGround)
     {
         float3 hitPos = rayOrigin + rayDir * distToGround;
-        float3 normal = normalize(hitPos - float3(args.param.planetCenter));
+        float3 normal = normalize(hitPos - planetCenter);
         float NoL     = saturate(dot(normal, sunDir));
 
         if (NoL > 0.0f)
         {
-            float3 sunTransmittanceAtGround = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, hitPos, float3(args.param.planetCenter), sunDir);
+            float3 sunTransmittanceAtGround = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, hitPos, planetCenter, sunDir);
             float3 directIlluminance = sunIlluminance * sunTransmittanceAtGround;
             float3 groundL0 = (float3(args.param.groundAlbedo) / float3(PI)) * directIlluminance * NoL;
 

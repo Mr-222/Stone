@@ -26,6 +26,10 @@ private:
     std::unique_ptr<Texture> m_transmittanceLUT;
 
     MTL::ComputePipelineState* m_skyViewLUTPipelineState = nullptr;
+    MTL4::ArgumentTable* m_skyViewArgumentTable = nullptr;
+    std::unique_ptr<Buffer> m_skyViewParamsBuffer;
+    std::unique_ptr<Buffer> m_skyViewAtmosphereUniformsBuffer;
+    std::unique_ptr<Texture> m_skyViewLUT;
 
     bool hasInit;
 };

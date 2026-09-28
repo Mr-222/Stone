@@ -14,16 +14,16 @@ float RaySphereIntersect(float3 rayOrigin, float3 rayDir, float radius)
 {
     float b = dot(rayOrigin, rayDir);
     float c = dot(rayOrigin, rayOrigin) - radius * radius;
+    if (c >= 0.0f)
+    {
+        if (b >= 0.0f) return -1.0f;
+        float d = b * b - c;
+        if (d < 0.0f) return -1.0f;
+        float t = -b - sqrt(d);
+        return t > 0.0f ? t : -1.0f;
+    }
     float d = b * b - c;
-    if (d < 0.0f) return -1.0f;
-
-    float sqrtD = sqrt(d);
-    float t1 = -b - sqrtD;
-    float t2 = -b + sqrtD;
-
-    if (t1 > 0.0f) return t1;
-    if (t2 > 0.0f) return t2;
-    return -1.0f;
+    return -b + sqrt(max(0.0f, d));
 }
 
 // Atmospheric scattering coefficients

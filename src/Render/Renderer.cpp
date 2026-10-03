@@ -204,8 +204,10 @@ void Renderer::Run() {
         }
         m_renderGraph->RegisterFrameLocalTexture(kSceneDepthImageName, frameSlot, *depthTexture);
 
+        const glm::mat4 viewProj = m_camera->GetProjectionMatrix() * m_camera->GetViewMatrix();
         FrameUniform frameUniform = {
-            .viewProjection = m_camera->GetProjectionMatrix() * m_camera->GetViewMatrix(),
+            .viewProjection = viewProj,
+            .invViewProj = glm::inverse(viewProj),
             .cameraPosition = glm::vec4(m_camera->GetPosition(), 1.0f),
         };
         m_frameUniforms[frameSlot]->Update(&frameUniform, sizeof(FrameUniform));

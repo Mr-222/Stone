@@ -8,6 +8,7 @@ constant constexpr uint32_t kMaxBindlessTextureCount = 1024;
 
 struct FrameUniform {
     float4x4 viewProjection;
+    float4x4 invViewProj;
     float4 cameraPosition;
 };
 
@@ -66,6 +67,7 @@ constexpr uint32_t kMaxBindlessTextureCount = 1024;
 
 struct FrameUniform {
     glm::mat4 viewProjection;
+    glm::mat4 invViewProj;
     glm::vec4 cameraPosition;
 };
 
@@ -117,7 +119,7 @@ struct AtmosphereUniforms {
     glm::vec3 groundAlbedo;
 };
 
-static_assert(sizeof(FrameUniform) == 80);
+static_assert(sizeof(FrameUniform) == 144);
 static_assert(sizeof(GPULightListInfo) == 32);
 static_assert(sizeof(GPUDirectionalLight) == 32);
 static_assert(sizeof(GPUPointLight) == 32);

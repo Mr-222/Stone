@@ -67,7 +67,9 @@ fragment float4 opaqueDirect_fragment(
             continue;
 
         const float3 brdf = EvaluateBRDF(n, v, l, diffuseColor, f0, perceptualRoughness, NoL);
-        const float3 lightColor = max(light.colorAndIlluminance.rgb, 0.0f);
+        float3 lightColor = max(light.colorAndIlluminance.rgb, 0.0f);
+        if (lightIndex == 0)
+            lightColor *= frame.sunTransmittance.rgb;
         const float lightIlluminance = max(light.colorAndIlluminance.w, 0.0f);
 
         luminance += brdf * lightColor * (lightIlluminance * NoL);

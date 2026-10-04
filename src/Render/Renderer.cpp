@@ -58,7 +58,7 @@ void Renderer::Setup() {
     m_scene->LoadGltf("./Models/FlightHelmet/glTF/FlightHelmet.gltf");
     m_scene->directionalLights = {
         DirectionalLight{
-            .direction = glm::vec3(0.5f, -1.0f, 1.0f),
+            .direction = glm::vec3(1.0f, -0.2f, 1.0f),
             .color = glm::vec3(1.0f, 1.0f, 1.0f),
             .illuminance = 10.0f,
         },
@@ -103,8 +103,8 @@ void Renderer::Setup() {
     m_renderGraph->AddPassNode<TransparentCompositePass>("TransparentComposite", *m_metalContext);
 
     m_renderGraph->SetDependencyGraph({
-        { "OpaqueDirectLighting", { "ObjectCulling" } },
-        { "AtmosphereScattering", { "OpaqueDirectLighting", "AtmosphereLUT" } },
+        { "OpaqueDirectLighting", { "ObjectCulling", "AtmosphereLUT" } },
+        { "AtmosphereScattering", { "OpaqueDirectLighting" } },
         { "TransparentObjectCulling", { "ObjectCulling" } },
         { "TransparentDirectLighting", { "AtmosphereScattering", "TransparentObjectCulling" } },
         { "TransparentComposite", { "TransparentDirectLighting" } }
@@ -212,6 +212,7 @@ void Renderer::Run() {
             .viewProjection = viewProj,
             .invViewProj = glm::inverse(viewProj),
             .cameraPosition = glm::vec4(m_camera->GetPosition(), 1.0f),
+            .sunTransmittance = glm::vec4(1.0f),
         };
         m_frameUniforms[frameSlot]->Update(&frameUniform, sizeof(FrameUniform));
 

@@ -27,6 +27,7 @@ struct SkyViewArgumentData {
     MTL::ResourceID transmittanceLUT;
     MTL::GPUAddress directionalLights;
     MTL::GPUAddress param;
+    MTL::GPUAddress frameUniform;
 };
 
 struct PassData {
@@ -151,8 +152,8 @@ void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
             builder.WriteTexture(transmittanceLUTHandle);
             builder.WriteTexture(skyViewLUTHandle);
             builder.WriteBuffer(atmosphereUniformsHandle);
+            builder.WriteBuffer(frameUniformHandle);
             builder.ReadBuffer(directionalLightBufferHandle);
-            builder.ReadBuffer(frameUniformHandle);
         },
         [this](const PassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Texture* transmittanceLUT = resources.GetTexture(data.transmittanceLUTHandle);
@@ -181,6 +182,7 @@ void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
                 .transmittanceLUT = transmittanceLUT->gpuResourceID(),
                 .directionalLights = directionalLightBuffer->gpuAddress(),
                 .param = atmosphereUniformsBuffer->gpuAddress(),
+                .frameUniform = frameUniformBuffer->gpuAddress(),
             };
             memcpy(skyViewArgumentBuffer->contents(), &skyViewArgs, sizeof(SkyViewArgumentData));
             data.skyViewArgumentTable->setAddress(skyViewArgumentBuffer->gpuAddress(), static_cast<NS::UInteger>(SkyViewBufferIndex::KernelArguments));

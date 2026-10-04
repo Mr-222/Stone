@@ -3,6 +3,7 @@ using namespace metal;
 
 constant constexpr float PI = 3.14159265358979323846f;
 constant constexpr float InvPI = 1.0f / PI;
+constant float SUN_ANGULAR_RADIUS = 0.00465f; // Solar angular radius (0.267 degree -> radian)
 
 constexpr float ConstexprSqrt(float x) {
     float curr = x >= 1.0f ? x : 1.0f, prev = 0.0f;

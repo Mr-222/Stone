@@ -257,6 +257,20 @@ enum class AtmosphereSkyViewLUTKernelArgumentID {
     MaxArgumentID,
 };
 
+enum class AtmosphereScatteringBufferIndex {
+    FrameUniform,
+    FragmentArguments,
+    MaxBufferBindCount,
+};
+
+enum class AtmosphereScatteringFragmentArgumentID {
+    SkyViewTexture,
+    TransmittanceTexture,
+    DirectionalLights,
+    Param,
+    MaxArgumentID,
+};
+
 #ifdef __METAL_VERSION__
 struct GPUVertex {
     packed_float3 position;
@@ -326,6 +340,13 @@ struct AtmosphereSkyViewLUTKernelArguments {
     texture2d<float, access::sample> transmittanceLUT [[id(AtmosphereSkyViewLUTKernelArgumentID::TransmittanceTexture)]];
     const device GPUDirectionalLight* directionalLights [[id(AtmosphereSkyViewLUTKernelArgumentID::DirectionalLights)]];
     const device AtmosphereUniforms& param [[id(AtmosphereSkyViewLUTKernelArgumentID::Param)]];
+};
+
+struct AtmosphereScatteringFragmentArguments {
+    texture2d<float, access::sample> skyViewLUT [[id(AtmosphereScatteringFragmentArgumentID::SkyViewTexture)]];
+    texture2d<float, access::sample> transmittanceLUT [[id(AtmosphereScatteringFragmentArgumentID::TransmittanceTexture)]];
+    const device GPUDirectionalLight* directionalLights [[id(AtmosphereScatteringFragmentArgumentID::DirectionalLights)]];
+    const device AtmosphereUniforms& param [[id(AtmosphereScatteringFragmentArgumentID::Param)]];
 };
 
 #endif

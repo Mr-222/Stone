@@ -186,6 +186,18 @@ kernel void skyView_main(
     float3 rayOrigin = float3(0.0f, args.param.cameraAltitude, 0.0f);
     float3 planetCenter = float3(args.param.planetCenter);
 
+    // Treat first directional light as sun
+    GPUDirectionalLight sun = args.directionalLights[0];
+    float3 sunDir = -normalize(sun.direction.xyz);
+    float3 sunIlluminance = sun.colorAndIlluminance.xyz * sun.colorAndIlluminance.w;
+
+    // One compute thread for storing sun transmittance
+    if (threadIdx.x == 0 && threadIdx.y == 0)
+    {
+        float3 cameraSunTransmittance = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, rayOrigin, planetCenter, sunDir);
+        args.frameUniform.sunTransmittance = float4(cameraSunTransmittance, 1.0f);
+    }
+
     // Determine whether the gaze ray hits the ground
     float distToGround = RaySphereIntersect(rayOrigin - planetCenter, rayDir, R_ground);
     float distToTop    = RaySphereIntersect(rayOrigin - planetCenter, rayDir, R_top);
@@ -204,11 +216,6 @@ kernel void skyView_main(
     float stepSize = rayLength / float(SAMPLE_COUNT);
     float3 accumulatedLuminance = float3(0.0f);
     float3 accumulatedTransmittance = float3(1.0f);
-
-    // Treat first directional light as sun
-    GPUDirectionalLight sun = args.directionalLights[0];
-    float3 sunDir  = -normalize(sun.direction.xyz);
-    float3 sunIlluminance = sun.colorAndIlluminance.xyz * sun.colorAndIlluminance.w;
 
     float cosTheta = clamp(dot(rayDir, sunDir), -1.0f, 1.0f);
     float phaseR   = PhaseRayleigh(cosTheta);

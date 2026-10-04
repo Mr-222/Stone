@@ -8,7 +8,9 @@ constant constexpr uint32_t kMaxBindlessTextureCount = 1024;
 
 struct FrameUniform {
     float4x4 viewProjection;
+    float4x4 invViewProj;
     float4 cameraPosition;
+    float4 sunTransmittance;
 };
 
 struct GPULightListInfo {
@@ -66,7 +68,9 @@ constexpr uint32_t kMaxBindlessTextureCount = 1024;
 
 struct FrameUniform {
     glm::mat4 viewProjection;
+    glm::mat4 invViewProj;
     glm::vec4 cameraPosition;
+    glm::vec4 sunTransmittance;
 };
 
 struct GPULightListInfo {
@@ -117,7 +121,7 @@ struct AtmosphereUniforms {
     glm::vec3 groundAlbedo;
 };
 
-static_assert(sizeof(FrameUniform) == 80);
+static_assert(sizeof(FrameUniform) == 160);
 static_assert(sizeof(GPULightListInfo) == 32);
 static_assert(sizeof(GPUDirectionalLight) == 32);
 static_assert(sizeof(GPUPointLight) == 32);
@@ -252,6 +256,21 @@ enum class AtmosphereSkyViewLUTKernelArgumentID {
     TransmittanceTexture,
     DirectionalLights,
     Param,
+    FrameUniform,
+    MaxArgumentID,
+};
+
+enum class AtmosphereScatteringBufferIndex {
+    FrameUniform,
+    FragmentArguments,
+    MaxBufferBindCount,
+};
+
+enum class AtmosphereScatteringFragmentArgumentID {
+    SkyViewTexture,
+    TransmittanceTexture,
+    DirectionalLights,
+    Param,
     MaxArgumentID,
 };
 
@@ -324,6 +343,14 @@ struct AtmosphereSkyViewLUTKernelArguments {
     texture2d<float, access::sample> transmittanceLUT [[id(AtmosphereSkyViewLUTKernelArgumentID::TransmittanceTexture)]];
     const device GPUDirectionalLight* directionalLights [[id(AtmosphereSkyViewLUTKernelArgumentID::DirectionalLights)]];
     const device AtmosphereUniforms& param [[id(AtmosphereSkyViewLUTKernelArgumentID::Param)]];
+    device FrameUniform& frameUniform [[id(AtmosphereSkyViewLUTKernelArgumentID::FrameUniform)]];
+};
+
+struct AtmosphereScatteringFragmentArguments {
+    texture2d<float, access::sample> skyViewLUT [[id(AtmosphereScatteringFragmentArgumentID::SkyViewTexture)]];
+    texture2d<float, access::sample> transmittanceLUT [[id(AtmosphereScatteringFragmentArgumentID::TransmittanceTexture)]];
+    const device GPUDirectionalLight* directionalLights [[id(AtmosphereScatteringFragmentArgumentID::DirectionalLights)]];
+    const device AtmosphereUniforms& param [[id(AtmosphereScatteringFragmentArgumentID::Param)]];
 };
 
 #endif

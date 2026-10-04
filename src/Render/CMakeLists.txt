@@ -8,6 +8,7 @@ add_library(Render STATIC
         TransparentDirectLightingPass.cpp
         TransparentCompositePass.cpp
         AtmosphereLUT.cpp
+        AtmosphereScatteringPass.cpp
 )
 
 target_include_directories(Render PUBLIC

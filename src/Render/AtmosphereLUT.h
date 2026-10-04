@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 #include <Metal/Metal.hpp>
 
 #include "Pass.h"
@@ -20,6 +21,8 @@ public:
     static constexpr bool IsCompute = true;
 
 private:
+    MetalContext* m_context = nullptr;
+
     MTL::ComputePipelineState* m_transmittanceLUTPipelineState = nullptr;
     MTL4::ArgumentTable* m_transmittanceArgumentTable = nullptr;
     std::unique_ptr<Buffer> m_transmittanceParamsBuffer;
@@ -27,9 +30,11 @@ private:
 
     MTL::ComputePipelineState* m_skyViewLUTPipelineState = nullptr;
     MTL4::ArgumentTable* m_skyViewArgumentTable = nullptr;
-    std::unique_ptr<Buffer> m_skyViewParamsBuffer;
-    std::unique_ptr<Buffer> m_skyViewAtmosphereUniformsBuffer;
-    std::unique_ptr<Texture> m_skyViewLUT;
+
+    // Per frame slot: rewritten by the CPU every frame while earlier frames may still be running on the GPU
+    std::vector<std::unique_ptr<Buffer>> m_skyViewParamsBuffers;
+    std::vector<std::unique_ptr<Buffer>> m_skyViewAtmosphereUniformsBuffers;
+    std::vector<std::unique_ptr<Texture>> m_skyViewLUTs;
 
     bool hasInit;
 };

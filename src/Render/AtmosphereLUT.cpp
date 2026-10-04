@@ -27,6 +27,7 @@ struct SkyViewArgumentData {
     MTL::ResourceID transmittanceLUT;
     MTL::GPUAddress directionalLights;
     MTL::GPUAddress param;
+    MTL::GPUAddress frameUniform;
 };
 
 struct PassData {
@@ -37,14 +38,14 @@ struct PassData {
 
     MTL::ComputePipelineState* skyViewPipelineState = nullptr;
     MTL4::ArgumentTable*      skyViewArgumentTable = nullptr;
-    MTL::Buffer*             skyViewArgumentBuffer = nullptr;
-    MTL::Buffer*             skyViewAtmosphereUniformsBuffer = nullptr;
     RenderGraphResourceHandle skyViewLUTHandle;
+    RenderGraphResourceHandle atmosphereUniformsHandle;
     RenderGraphResourceHandle directionalLightBufferHandle;
     RenderGraphResourceHandle frameUniformHandle;
 };
 
 void AtmosphereLUT::Setup(MetalContext &context) {
+    m_context = &context;
     MTL::Device* device = context.GetDevice();
     NS::Error* error = nullptr;
 
@@ -92,19 +93,23 @@ void AtmosphereLUT::Setup(MetalContext &context) {
         m_skyViewLUTPipelineState = compiler->newComputePipelineState(pipelineDescriptor, taskOptions, &error);
         LOG_ERROR_IF(!m_skyViewLUTPipelineState, "Failed to create atmosphere skyViewLUT compute pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
-        MTL::TextureDescriptor* texDesc = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormat::PixelFormatRGBA16Float, SKYVIEW_WIDTH, SKYVIEW_HEIGHT, false);
-        texDesc->setStorageMode(MTL::StorageModePrivate);
-        texDesc->setUsage(MTL::TextureUsageShaderWrite | MTL::TextureUsageShaderRead);
-        m_skyViewLUT = std::make_unique<Texture>(device, texDesc);
-        m_skyViewLUT->GetNative()->setLabel(NS::String::string("Atmosphere SkyViewLUT", NS::UTF8StringEncoding));
+        const uint32_t frameSlotCount = context.GetFrameSlotCount();
+        m_skyViewLUTs.resize(frameSlotCount);
+        m_skyViewParamsBuffers.resize(frameSlotCount);
+        m_skyViewAtmosphereUniformsBuffers.resize(frameSlotCount);
+        for (uint32_t frameSlot = 0; frameSlot < frameSlotCount; ++frameSlot) {
+            MTL::TextureDescriptor* texDesc = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormat::PixelFormatRGBA16Float, SKYVIEW_WIDTH, SKYVIEW_HEIGHT, false);
+            texDesc->setStorageMode(MTL::StorageModePrivate);
+            texDesc->setUsage(MTL::TextureUsageShaderWrite | MTL::TextureUsageShaderRead);
+            m_skyViewLUTs[frameSlot] = std::make_unique<Texture>(device, texDesc);
+            m_skyViewLUTs[frameSlot]->GetNative()->setLabel(NS::String::string("Atmosphere SkyViewLUT", NS::UTF8StringEncoding));
 
-        // Argument buffer — will be updated per frame with scene resource IDs/addresses
-        m_skyViewParamsBuffer = std::make_unique<Buffer>(device, sizeof(SkyViewArgumentData), MTL::ResourceStorageModeShared);
-        m_skyViewParamsBuffer->GetNative()->setLabel(NS::String::string("AtmosphereSkyViewLUT Argument Buffer", NS::UTF8StringEncoding));
+            m_skyViewParamsBuffers[frameSlot] = std::make_unique<Buffer>(device, sizeof(SkyViewArgumentData), MTL::ResourceStorageModeShared);
+            m_skyViewParamsBuffers[frameSlot]->GetNative()->setLabel(NS::String::string("AtmosphereSkyViewLUT Argument Buffer", NS::UTF8StringEncoding));
 
-        // AtmosphereUniforms constant buffer — updated per frame
-        m_skyViewAtmosphereUniformsBuffer = std::make_unique<Buffer>(device, sizeof(AtmosphereUniforms), MTL::ResourceStorageModeShared);
-        m_skyViewAtmosphereUniformsBuffer->GetNative()->setLabel(NS::String::string("AtmosphereUniforms Buffer", NS::UTF8StringEncoding));
+            m_skyViewAtmosphereUniformsBuffers[frameSlot] = std::make_unique<Buffer>(device, sizeof(AtmosphereUniforms), MTL::ResourceStorageModeShared);
+            m_skyViewAtmosphereUniformsBuffers[frameSlot]->GetNative()->setLabel(NS::String::string("AtmosphereUniforms Buffer", NS::UTF8StringEncoding));
+        }
 
         MTL4::ArgumentTableDescriptor* argTableDesc = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
         argTableDesc->setLabel(NS::String::string("AtmosphereSkyViewLUT", NS::UTF8StringEncoding));
@@ -112,7 +117,6 @@ void AtmosphereLUT::Setup(MetalContext &context) {
         argTableDesc->setMaxBufferBindCount(static_cast<NS::UInteger>(SkyViewBufferIndex::MaxBufferBindCount));
         m_skyViewArgumentTable = device->newArgumentTable(argTableDesc, &error);
         LOG_ERROR_IF(!m_skyViewArgumentTable, "Failed to create skyView argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
-        m_skyViewArgumentTable->setAddress(m_skyViewParamsBuffer->GetGPUAddress(), static_cast<NS::UInteger>(SkyViewBufferIndex::KernelArguments));
     }
 
     compiler->release();
@@ -120,7 +124,12 @@ void AtmosphereLUT::Setup(MetalContext &context) {
 
 void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
     RenderGraphResourceHandle transmittanceLUTHandle = graph.RegisterTexture("AtmosphereTransmittanceLUT", *m_transmittanceLUT);
-    RenderGraphResourceHandle skyViewLUTHandle = graph.RegisterTexture("AtmosphereSkyViewLUT", *m_skyViewLUT);
+    for (uint32_t frameSlot = 0; frameSlot < m_skyViewLUTs.size(); ++frameSlot) {
+        graph.RegisterFrameLocalTexture("AtmosphereSkyViewLUT", frameSlot, *m_skyViewLUTs[frameSlot]);
+        graph.RegisterFrameLocalBuffer("AtmosphereUniformsBuffer", frameSlot, *m_skyViewAtmosphereUniformsBuffers[frameSlot]);
+    }
+    RenderGraphResourceHandle skyViewLUTHandle = graph.DeclareTexture("AtmosphereSkyViewLUT");
+    RenderGraphResourceHandle atmosphereUniformsHandle = graph.DeclareBuffer("AtmosphereUniformsBuffer");
     RenderGraphResourceHandle directionalLightBufferHandle = graph.DeclareBuffer("DirectionalLightBuffer");
     RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
 
@@ -135,22 +144,24 @@ void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
 
             data.skyViewPipelineState             = m_skyViewLUTPipelineState;
             data.skyViewArgumentTable             = m_skyViewArgumentTable;
-            data.skyViewArgumentBuffer            = m_skyViewParamsBuffer->GetNative();
-            data.skyViewAtmosphereUniformsBuffer  = m_skyViewAtmosphereUniformsBuffer->GetNative();
             data.skyViewLUTHandle                 = skyViewLUTHandle;
+            data.atmosphereUniformsHandle         = atmosphereUniformsHandle;
             data.directionalLightBufferHandle     = directionalLightBufferHandle;
             data.frameUniformHandle               = frameUniformHandle;
 
             builder.WriteTexture(transmittanceLUTHandle);
             builder.WriteTexture(skyViewLUTHandle);
+            builder.WriteBuffer(atmosphereUniformsHandle);
+            builder.WriteBuffer(frameUniformHandle);
             builder.ReadBuffer(directionalLightBufferHandle);
-            builder.ReadBuffer(frameUniformHandle);
         },
         [this](const PassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Texture* transmittanceLUT = resources.GetTexture(data.transmittanceLUTHandle);
             MTL::Texture* skyViewLUT = resources.GetTexture(data.skyViewLUTHandle);
+            MTL::Buffer* atmosphereUniformsBuffer = resources.GetBuffer(data.atmosphereUniformsHandle);
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
             MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
+            MTL::Buffer* skyViewArgumentBuffer = m_skyViewParamsBuffers[m_context->GetCurrentFrameSlot()]->GetNative();
 
             constexpr float kRground = 6360.0f; // km
             const glm::vec3 planetCenter = glm::vec3(0.0f, -kRground, 0.0f);
@@ -164,21 +175,23 @@ void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
                 .cameraAltitude = cameraAltitude,
                 .groundAlbedo = glm::vec3(0.3f, 0.3f, 0.3f),
             };
-            memcpy(data.skyViewAtmosphereUniformsBuffer->contents(), &atmoUniforms, sizeof(AtmosphereUniforms));
+            memcpy(atmosphereUniformsBuffer->contents(), &atmoUniforms, sizeof(AtmosphereUniforms));
 
             const SkyViewArgumentData skyViewArgs {
                 .skyViewLUT = skyViewLUT->gpuResourceID(),
                 .transmittanceLUT = transmittanceLUT->gpuResourceID(),
                 .directionalLights = directionalLightBuffer->gpuAddress(),
-                .param = data.skyViewAtmosphereUniformsBuffer->gpuAddress(),
+                .param = atmosphereUniformsBuffer->gpuAddress(),
+                .frameUniform = frameUniformBuffer->gpuAddress(),
             };
-            memcpy(data.skyViewArgumentBuffer->contents(), &skyViewArgs, sizeof(SkyViewArgumentData));
+            memcpy(skyViewArgumentBuffer->contents(), &skyViewArgs, sizeof(SkyViewArgumentData));
+            data.skyViewArgumentTable->setAddress(skyViewArgumentBuffer->gpuAddress(), static_cast<NS::UInteger>(SkyViewBufferIndex::KernelArguments));
 
             if (!hasInit) {
                 cmd.AddResource(data.transmittanceArgumentBuffer);
             }
-            cmd.AddResource(data.skyViewArgumentBuffer);
-            cmd.AddResource(data.skyViewAtmosphereUniformsBuffer);
+            cmd.AddResource(skyViewArgumentBuffer);
+            cmd.AddResource(atmosphereUniformsBuffer);
             cmd.AddResource(skyViewLUT);
             cmd.AddResource(transmittanceLUT);
             cmd.AddResource(directionalLightBuffer);

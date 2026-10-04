@@ -562,7 +562,7 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     directionalLightEntries.reserve(directionalLights.size());
     for (const DirectionalLight& light : directionalLights) {
         directionalLightEntries.push_back(GPUDirectionalLight{
-            .direction = glm::vec4(light.direction, 0.0f),
+            .direction = glm::vec4(glm::normalize(light.direction), 0.0f),
             .colorAndIlluminance = glm::vec4(light.color, light.illuminance),
         });
     }

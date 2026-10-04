@@ -15,6 +15,7 @@
 #include "Render/TransparentDirectLightingPass.h"
 #include "Render/TransparentCompositePass.h"
 #include "Render/AtmosphereLUT.h"
+#include "Render/AtmosphereScatteringPass.h"
 #include "Render/Scene.h"
 #include "Shader/ShaderTypes.h"
 
@@ -58,8 +59,8 @@ void Renderer::Setup() {
     m_scene->directionalLights = {
         DirectionalLight{
             .direction = glm::vec3(0.5f, -1.0f, 1.0f),
-            .color = glm::vec3(1.0f, 0.9f, 0.75f),
-            .illuminance = 2.0f,
+            .color = glm::vec3(1.0f, 1.0f, 1.0f),
+            .illuminance = 10.0f,
         },
         DirectionalLight{
             .direction = glm::vec3(-0.8f, -0.4f, -1.0f),
@@ -96,14 +97,16 @@ void Renderer::Setup() {
     m_renderGraph->AddPassNode<AtmosphereLUT>("AtmosphereLUT", *m_metalContext);
     m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->opaqueRenderPrimitives.size());
     m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->opaqueRenderPrimitives.size(), m_scene->GetTextures());
+    m_renderGraph->AddPassNode<AtmosphereScatteringPass>("AtmosphereScattering", *m_metalContext);
     m_renderGraph->AddPassNode<TransparentObjectCullingPass>("TransparentObjectCulling", *m_metalContext, m_scene->transparentRenderPrimitives.size());
     m_renderGraph->AddPassNode<TransparentDirectLightingPass>("TransparentDirectLighting", *m_metalContext, m_scene->transparentRenderPrimitives.size(), m_scene->GetTextures());
     m_renderGraph->AddPassNode<TransparentCompositePass>("TransparentComposite", *m_metalContext);
 
     m_renderGraph->SetDependencyGraph({
         { "OpaqueDirectLighting", { "ObjectCulling" } },
+        { "AtmosphereScattering", { "OpaqueDirectLighting", "AtmosphereLUT" } },
         { "TransparentObjectCulling", { "ObjectCulling" } },
-        { "TransparentDirectLighting", { "OpaqueDirectLighting", "TransparentObjectCulling", "AtmosphereLUT" } },
+        { "TransparentDirectLighting", { "AtmosphereScattering", "TransparentObjectCulling" } },
         { "TransparentComposite", { "TransparentDirectLighting" } }
     });
 

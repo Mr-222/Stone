@@ -150,7 +150,7 @@ void OpaqueDirectLightingPass::Setup(
 }
 
 void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
-    RenderGraphResourceHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
+    RenderGraphResourceHandle sceneColorHandle = graph.DeclareTexture(kSceneColorImageName);
     RenderGraphResourceHandle depthHandle = graph.DeclareTexture(kSceneDepthImageName);
     RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
     RenderGraphResourceHandle opaqueVertexBufferHandle = graph.DeclareBuffer("OpaqueVertexBuffer");
@@ -167,7 +167,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
         "OpaqueDirectLighting",
         IsCompute,
         [=, this](RenderGraphBuilder& builder, OpaqueDirectLightingPassData& data, RenderGraphResources& resources) {
-            data.colorAttachment = builder.WriteColor(swapchainHandle, RenderGraphColorAttachmentDesc{
+            data.colorAttachment = builder.WriteColor(sceneColorHandle, RenderGraphColorAttachmentDesc{
                 .loadAction = MTL::LoadActionClear,
                 .storeAction = MTL::StoreActionStore,
                 .clearColor = MTL::ClearColor::Make(0.0, 0.0, 0.0, 1.0),

@@ -14,6 +14,7 @@ class TransparentDirectLightingPass;
 class TransparentCompositePass;
 class AtmosphereLUT;
 class AtmosphereScatteringPass;
+class TonemappingPass;
 class Scene;
 class Camera;
 class Buffer;
@@ -45,11 +46,13 @@ private:
     std::unique_ptr<TransparentCompositePass> m_transparentCompositePass;
     std::unique_ptr<AtmosphereLUT> m_atmosphereLUTPass;
     std::unique_ptr<AtmosphereScatteringPass> m_atmosphereScatteringPass;
+    std::unique_ptr<TonemappingPass> m_tonemappingPass;
     std::unique_ptr<Scene> m_scene;
 
     std::unique_ptr<Camera> m_camera;
     std::vector<std::unique_ptr<Buffer>> m_frameUniforms;
     std::vector<std::unique_ptr<Texture>> m_depthTextures;
+    std::vector<std::unique_ptr<Texture>> m_sceneColorTextures;
 
     bool m_firstMouse = true;
     double m_lastX;

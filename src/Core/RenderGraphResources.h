@@ -14,6 +14,7 @@
 
 constexpr std::string kSwapchainImageName = "swapchain_image";
 constexpr std::string kSceneDepthImageName = "scene_depth";
+constexpr std::string kSceneColorImageName = "scene_color";
 
 enum class RenderGraphResourceType {
     Texture,

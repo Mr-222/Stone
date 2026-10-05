@@ -82,7 +82,7 @@ void TransparentCompositePass::Setup(MetalContext& context) {
 }
 
 void TransparentCompositePass::AddToGraph(RenderGraph& graph) {
-    RenderGraphResourceHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
+    RenderGraphResourceHandle sceneColorHandle = graph.DeclareTexture(kSceneColorImageName);
     RenderGraphResourceHandle accumHandle = graph.DeclareTexture("OITAccumTexture");
     RenderGraphResourceHandle revealHandle = graph.DeclareTexture("OITRevealTexture");
 
@@ -90,7 +90,7 @@ void TransparentCompositePass::AddToGraph(RenderGraph& graph) {
         "TransparentComposite",
         IsCompute,
         [=, this](RenderGraphBuilder& builder, TransparentCompositePassData& data, RenderGraphResources&) {
-            data.colorAttachment = builder.WriteColor(swapchainHandle, RenderGraphColorAttachmentDesc{
+            data.colorAttachment = builder.WriteColor(sceneColorHandle, RenderGraphColorAttachmentDesc{
                 .loadAction = MTL::LoadActionLoad,
                 .storeAction = MTL::StoreActionStore,
                 .clearColor = MTL::ClearColor::Make(0.0, 0.0, 0.0, 1.0),

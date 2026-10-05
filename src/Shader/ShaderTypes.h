@@ -236,6 +236,17 @@ enum class TransparentCompositeFragmentArgumentID {
     MaxArgumentID,
 };
 
+enum class TonemappingBufferIndex {
+    FragmentArguments,
+    MaxBufferBindCount,
+};
+
+enum class TonemappingFragmentArgumentID {
+    SceneColorTexture,
+    EdrHeadroom,
+    MaxArgumentID,
+};
+
 enum class TransmittanceBufferIndex {
     KernelArguments,
     MaxBufferBindCount,
@@ -351,6 +362,11 @@ struct AtmosphereScatteringFragmentArguments {
     texture2d<float, access::sample> transmittanceLUT [[id(AtmosphereScatteringFragmentArgumentID::TransmittanceTexture)]];
     const device GPUDirectionalLight* directionalLights [[id(AtmosphereScatteringFragmentArgumentID::DirectionalLights)]];
     const device AtmosphereUniforms& param [[id(AtmosphereScatteringFragmentArgumentID::Param)]];
+};
+
+struct TonemappingFragmentArguments {
+    texture2d<float, access::sample> sceneColorTexture [[id(TonemappingFragmentArgumentID::SceneColorTexture)]];
+    float edrHeadroom [[id(TonemappingFragmentArgumentID::EdrHeadroom)]];
 };
 
 #endif

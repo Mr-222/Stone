@@ -16,6 +16,7 @@
 #include "Render/TransparentCompositePass.h"
 #include "Render/AtmosphereLUT.h"
 #include "Render/AtmosphereScatteringPass.h"
+#include "Render/TonemappingPass.h"
 #include "Render/Scene.h"
 #include "Shader/ShaderTypes.h"
 
@@ -34,6 +35,7 @@ void Renderer::Setup() {
     m_renderGraph = std::make_unique<RenderGraph>(m_metalContext, m_commandBufferPool);
     const uint32_t frameSlotCount = m_metalContext->GetFrameSlotCount();
     m_depthTextures.resize(frameSlotCount);
+    m_sceneColorTextures.resize(frameSlotCount);
 
     CameraConfig config = {
         .position = glm::vec3(0.0f, 0.0f, -3.0f),
@@ -101,13 +103,15 @@ void Renderer::Setup() {
     m_renderGraph->AddPassNode<TransparentObjectCullingPass>("TransparentObjectCulling", *m_metalContext, m_scene->transparentRenderPrimitives.size());
     m_renderGraph->AddPassNode<TransparentDirectLightingPass>("TransparentDirectLighting", *m_metalContext, m_scene->transparentRenderPrimitives.size(), m_scene->GetTextures());
     m_renderGraph->AddPassNode<TransparentCompositePass>("TransparentComposite", *m_metalContext);
+    m_renderGraph->AddPassNode<TonemappingPass>("Tonemapping", *m_metalContext, *m_window);
 
     m_renderGraph->SetDependencyGraph({
         { "OpaqueDirectLighting", { "ObjectCulling", "AtmosphereLUT" } },
         { "AtmosphereScattering", { "OpaqueDirectLighting" } },
         { "TransparentObjectCulling", { "ObjectCulling" } },
         { "TransparentDirectLighting", { "AtmosphereScattering", "TransparentObjectCulling" } },
-        { "TransparentComposite", { "TransparentDirectLighting" } }
+        { "TransparentComposite", { "TransparentDirectLighting" } },
+        { "Tonemapping", { "TransparentComposite" } }
     });
 
     m_renderGraph->Compile();
@@ -206,6 +210,18 @@ void Renderer::Run() {
             depthTexture->GetNative()->setLabel(NS::String::string("Scene Depth", NS::UTF8StringEncoding));
         }
         m_renderGraph->RegisterFrameLocalTexture(kSceneDepthImageName, frameSlot, *depthTexture);
+
+        // register scene color buffer
+        std::unique_ptr<Texture>& sceneColorTexture = m_sceneColorTextures[frameSlot];
+        if (!sceneColorTexture || sceneColorTexture->GetWidth() != backbufferTexture->width() || sceneColorTexture->GetHeight() != backbufferTexture->height()) {
+            MTL::TextureDescriptor* sceneColorDescriptor = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA16Float, backbufferTexture->width(), backbufferTexture->height(), false);
+            sceneColorDescriptor->setStorageMode(MTL::StorageModePrivate);
+            sceneColorDescriptor->setUsage(MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead);
+
+            sceneColorTexture = std::make_unique<Texture>(m_metalContext->GetDevice(), sceneColorDescriptor);
+            sceneColorTexture->GetNative()->setLabel(NS::String::string("Scene Color", NS::UTF8StringEncoding));
+        }
+        m_renderGraph->RegisterFrameLocalTexture(kSceneColorImageName, frameSlot, *sceneColorTexture);
 
         const glm::mat4 viewProj = m_camera->GetProjectionMatrix() * m_camera->GetViewMatrix();
         FrameUniform frameUniform = {

@@ -17,6 +17,7 @@ public:
     void SetTitle(const std::string& title);
     GLFWwindow* GetGLFWWindow();
     CA::MetalLayer* GetCAMetalLayer();
+    float GetEDRHeadroom() const;
 
 private:
     int m_width, m_height;

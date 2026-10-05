@@ -59,3 +59,8 @@ GLFWwindow* Window::GetGLFWWindow() {
 CA::MetalLayer* Window::GetCAMetalLayer() {
     return m_metalLayer.get();
 }
+
+float Window::GetEDRHeadroom() const {
+    NSWindow* cocoaWindow = (NSWindow*)glfwGetCocoaWindow(m_window);
+    return static_cast<float>(cocoaWindow.screen.maximumExtendedDynamicRangeColorComponentValue);
+}

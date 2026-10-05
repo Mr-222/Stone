@@ -89,7 +89,7 @@ void AtmosphereScatteringPass::Setup(MetalContext& context) {
 }
 
 void AtmosphereScatteringPass::AddToGraph(RenderGraph& graph) {
-    RenderGraphResourceHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
+    RenderGraphResourceHandle sceneColorHandle = graph.DeclareTexture(kSceneColorImageName);
     RenderGraphResourceHandle depthHandle = graph.DeclareTexture(kSceneDepthImageName);
     RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
     RenderGraphResourceHandle skyViewLUTHandle = graph.DeclareTexture("AtmosphereSkyViewLUT");
@@ -101,7 +101,7 @@ void AtmosphereScatteringPass::AddToGraph(RenderGraph& graph) {
         "AtmosphereScattering",
         IsCompute,
         [=, this](RenderGraphBuilder& builder, AtmosphereScatteringPassData& data, RenderGraphResources&) {
-            data.colorAttachment = builder.WriteColor(swapchainHandle, RenderGraphColorAttachmentDesc{
+            data.colorAttachment = builder.WriteColor(sceneColorHandle, RenderGraphColorAttachmentDesc{
                 .loadAction = MTL::LoadActionLoad,
                 .storeAction = MTL::StoreActionStore,
                 .clearColor = MTL::ClearColor::Make(0.0, 0.0, 0.0, 1.0),

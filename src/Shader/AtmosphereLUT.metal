@@ -166,6 +166,32 @@ float3 SampleTransmittanceLUT(texture2d<float, access::sample> transmittanceLUT,
     return transmittanceLUT.sample(s, float2(u, v), level(0.0f)).rgb;
 }
 
+float3 SampleMultiScatteringLUT(texture2d<float, access::sample> multiScatteringLUT,
+                                sampler s,
+                                float3 worldPos,
+                                float3 planetCenter,
+                                float3 sunDir)
+{
+    uint width  = multiScatteringLUT.get_width();
+    uint height = multiScatteringLUT.get_height();
+
+    float3 up = worldPos - planetCenter;
+    float  r  = length(up);
+    up /= r;
+
+    float cosSunZenith = dot(up, sunDir);
+    float altitude     = max(0.0f, r - R_ground);
+
+    float u = 0.5f + 0.5f * cosSunZenith;
+    float v = saturate(altitude / (R_top - R_ground));
+
+    // Half texel correction
+    u = 0.5f / float(width)  + u * (1.0f - 1.0f / float(width));
+    v = 0.5f / float(height) + v * (1.0f - 1.0f / float(height));
+
+    return multiScatteringLUT.sample(s, float2(u, v), level(0.0f)).rgb;
+}
+
 kernel void skyView_main(
     uint2 threadIdx [[thread_position_in_grid]],
     device AtmosphereSkyViewLUTKernelArguments& args [[buffer(SkyViewBufferIndex::KernelArguments)]])
@@ -234,7 +260,13 @@ kernel void skyView_main(
         float3 transmittanceToSun = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, samplePos, planetCenter, sunDir);
 
         // Single in-scattering source term
-        float3 inScattering = (sigma_s_R * phaseR + sigma_s_M * phaseM) * transmittanceToSun * sunIlluminance;
+        float3 singleInScattering = (sigma_s_R * phaseR + sigma_s_M * phaseM) * transmittanceToSun * sunIlluminance;
+
+        // Multiple scattering
+        float3 psi_ms = SampleMultiScatteringLUT(args.multiScatteringLUT, linearClampSampler, samplePos, planetCenter, sunDir);
+        float3 multiInScattering = sigma_s * psi_ms * sunIlluminance;
+
+        float3 inScattering = singleInScattering + multiInScattering;
 
         // Extinction attenuation of a differential element
         float3 stepTransmittance = exp(-sigma_t * stepSize);
@@ -277,4 +309,108 @@ kernel void skyView_main(
     }
 
     args.skyViewLUT.write(float4(accumulatedLuminance, 1.0f) , threadIdx);
+}
+
+kernel void multiScattering_main(
+    uint2 threadIdx [[thread_position_in_grid]],
+    device AtmosphereMultiScatteringLUTKernelArguments& args [[buffer(MultiScatteringBufferIndex::KernelArguments)]])
+{
+    uint width  = args.multiScatteringLUT.get_width();
+    uint height = args.multiScatteringLUT.get_height();
+
+    if (threadIdx.x >= width || threadIdx.y >= height)
+        return;
+
+    constexpr sampler linearClampSampler(coord::normalized, address::clamp_to_edge, filter::linear);
+
+    float2 uv = float2(threadIdx) / float2(width - 1, height - 1);
+    float cosSunZenith = 2.0f * uv.x - 1.0f;
+    float altitude = 0.01f + uv.y * (R_top - R_ground - 0.01f);
+    float r        = R_ground + altitude;
+
+    float3 samplePos0 = float3(0.0f, r, 0.0f);
+    float3 planetCenter = float3(0.0f);
+
+    float sinSunZenith = sqrt(max(0.0f, 1.0f - cosSunZenith * cosSunZenith));
+    float3 sunDir = float3(sinSunZenith, cosSunZenith, 0.0f);
+
+    constexpr uint SAMPLE_SPHERE_COUNT = 64;
+    constexpr uint MARCHING_STEPS      = 20;
+
+    float3 totalL2nd = float3(0.0f);
+    float3 totalLf   = float3(0.0f); // unitless
+
+    for (uint i = 0; i < SAMPLE_SPHERE_COUNT; ++i)
+    {
+        float3 rayDir = GetUniformSphereDirection(i, SAMPLE_SPHERE_COUNT);
+
+        float distToGround = RaySphereIntersect(samplePos0, rayDir, R_ground);
+        float distToTop    = RaySphereIntersect(samplePos0, rayDir, R_top);
+
+        bool hitsGround    = (distToGround > 0.0f);
+        float rayLength    = hitsGround ? distToGround : distToTop;
+
+        if (rayLength <= 0.0f)
+            continue;
+
+        float dt = rayLength / float(MARCHING_STEPS);
+        float3 rayTransmittance = float3(1.0f);
+        float3 rayL2            = float3(0.0f);
+        float3 rayLf            = float3(0.0f); // unitless
+
+        float cosTheta = dot(rayDir, sunDir);
+        float phaseR   = PhaseRayleigh(cosTheta);
+        float phaseM   = PhaseMie(cosTheta);
+
+        for (uint step = 0; step < MARCHING_STEPS; ++step)
+        {
+            float t  = ((float)(step) + 0.5f) * dt;
+            float3 p = samplePos0 + rayDir * t;
+            float h  = length(p) - R_ground;
+
+            float3 sigma_s, sigma_t, sigma_s_R, sigma_s_M;
+            GetMediumCoefficients(h, sigma_s, sigma_t, sigma_s_R, sigma_s_M);
+
+            float3 stepTransmittance = exp(-sigma_t * dt);
+
+            // 1. Second-Order scattering L2nd integration (Sun base illuminance E_I = 1.0)
+            float3 sunTrans     = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, p, planetCenter, sunDir);
+            float3 inScatter    = sigma_s * (1.0f / 4.0f * PI) * sunTrans * 1.0f;
+            float3 integratedL2 = (inScatter - inScatter * stepTransmittance) / max(sigma_t, float3(1e-5f));
+            rayL2 += rayTransmittance * integratedL2;
+
+            // 2. Transfer function Lf integration
+            float3 integratedLf = (sigma_s - sigma_s * stepTransmittance) / max(sigma_t, float3(1e-5f));
+            rayLf += rayTransmittance * integratedLf;
+
+            rayTransmittance *= stepTransmittance;
+        }
+
+        // Ground diffuse reflection
+        if (hitsGround)
+        {
+            float3 hitPos = samplePos0 + rayDir * distToGround;
+            float3 normal = normalize(hitPos);
+            float  NoL    = saturate(dot(normal, sunDir));
+
+            if (NoL > 0.0f)
+            {
+                float3 sunTransAtGround = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, hitPos, planetCenter, sunDir);
+                float3 groundL0 = (float3(args.param.groundAlbedo) / float3(PI)) * sunTransAtGround * NoL;
+                rayL2 += rayTransmittance * groundL0;
+            }
+        }
+
+        totalL2nd += rayL2;
+        totalLf   += rayLf;
+    }
+
+    float3 L_2ndOrder = totalL2nd / float(SAMPLE_SPHERE_COUNT);
+    float3 f_ms       = totalLf / float(SAMPLE_SPHERE_COUNT);
+
+    // Geometric series F_ms = 1 / (1 - f_ms)
+    float3 F_ms   = 1.0f / (float3(1.0f) - f_ms);
+    float3 Psi_ms = L_2ndOrder * F_ms;
+
+    args.multiScatteringLUT.write(float4(Psi_ms, 1.0f), threadIdx);
 }

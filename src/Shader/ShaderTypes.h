@@ -268,6 +268,19 @@ enum class AtmosphereSkyViewLUTKernelArgumentID {
     DirectionalLights,
     Param,
     FrameUniform,
+    MultiScatteringTexture,
+    MaxArgumentID,
+};
+
+enum class MultiScatteringBufferIndex {
+    KernelArguments,
+    MaxBufferBindCount,
+};
+
+enum class AtmosphereMultiScatteringLUTKernelArgumentID {
+    MultiScatteringTexture,
+    TransmittanceTexture,
+    Param,
     MaxArgumentID,
 };
 
@@ -355,6 +368,13 @@ struct AtmosphereSkyViewLUTKernelArguments {
     const device GPUDirectionalLight* directionalLights [[id(AtmosphereSkyViewLUTKernelArgumentID::DirectionalLights)]];
     const device AtmosphereUniforms& param [[id(AtmosphereSkyViewLUTKernelArgumentID::Param)]];
     device FrameUniform& frameUniform [[id(AtmosphereSkyViewLUTKernelArgumentID::FrameUniform)]];
+    texture2d<float, access::sample> multiScatteringLUT [[id(AtmosphereSkyViewLUTKernelArgumentID::MultiScatteringTexture)]];
+};
+
+struct AtmosphereMultiScatteringLUTKernelArguments {
+    texture2d<float, access::write>  multiScatteringLUT [[id(AtmosphereMultiScatteringLUTKernelArgumentID::MultiScatteringTexture)]];
+    texture2d<float, access::sample> transmittanceLUT [[id(AtmosphereMultiScatteringLUTKernelArgumentID::TransmittanceTexture)]];
+    const device AtmosphereUniforms& param [[id(AtmosphereMultiScatteringLUTKernelArgumentID::Param)]];
 };
 
 struct AtmosphereScatteringFragmentArguments {

@@ -27,6 +27,14 @@ float RaySphereIntersect(float3 rayOrigin, float3 rayDir, float radius)
     return -b + sqrt(max(0.0f, d));
 }
 
+float3 GetUniformSphereDirection(uint sampleIdx, uint totalSamples)
+{
+    float phi = float(sampleIdx) * 2.39996323f; // golden angle
+    float z   = 1.0f - (2.0f * float(sampleIdx) + 1.0f) / float(totalSamples);
+    float sinTheta = sqrt(max(0.0f, 1.0f - z * z));
+    return float3(sinTheta * cos(phi), z, sinTheta * sin(phi));
+}
+
 // Atmospheric scattering coefficients
 constant constexpr float R_ground = 6360; // km
 constant constexpr float R_top    = 6460;

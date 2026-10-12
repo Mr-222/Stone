@@ -13,6 +13,9 @@
 #define TRANS_WIDTH 256
 #define TRANS_HEIGHT 64
 
+#define MULTISCATTERING_WIDTH 32
+#define MULTISCATTERING_HEIGHT 32
+
 #define SKYVIEW_WIDTH 200
 #define SKYVIEW_HEIGHT 100
 
@@ -22,22 +25,34 @@ struct TransmittanceArgumentData {
     MTL::ResourceID transmittanceLUT;
 };
 
+struct MultiScatteringArgumentData {
+    MTL::ResourceID multiScatteringLUT;
+    MTL::ResourceID transmittanceLUT;
+    MTL::GPUAddress param;
+};
+
 struct SkyViewArgumentData {
     MTL::ResourceID skyViewLUT;
     MTL::ResourceID transmittanceLUT;
     MTL::GPUAddress directionalLights;
     MTL::GPUAddress param;
     MTL::GPUAddress frameUniform;
+    MTL::ResourceID multiScatteringLUT;
 };
 
 struct PassData {
     MTL::ComputePipelineState* transmittancePiplineState = nullptr;
-    MTL4::ArgumentTable*      transmittanceArgumentTable = nullptr;
-    MTL::Buffer*             transmittanceArgumentBuffer = nullptr;
+    MTL4::ArgumentTable* transmittanceArgumentTable = nullptr;
+    MTL::Buffer* transmittanceArgumentBuffer = nullptr;
     RenderGraphResourceHandle transmittanceLUTHandle;
 
+    MTL::ComputePipelineState* multiScatteringPipelineState = nullptr;
+    MTL4::ArgumentTable* multiScatteringArgumentTable = nullptr;
+    MTL::Buffer* multiScatteringArgumentBuffer = nullptr;
+    RenderGraphResourceHandle multiScatteringLUTHandle;
+
     MTL::ComputePipelineState* skyViewPipelineState = nullptr;
-    MTL4::ArgumentTable*      skyViewArgumentTable = nullptr;
+    MTL4::ArgumentTable* skyViewArgumentTable = nullptr;
     RenderGraphResourceHandle skyViewLUTHandle;
     RenderGraphResourceHandle atmosphereUniformsHandle;
     RenderGraphResourceHandle directionalLightBufferHandle;
@@ -50,7 +65,7 @@ void AtmosphereLUT::Setup(MetalContext &context) {
     NS::Error* error = nullptr;
 
     ShaderLibrary shaderLibrary = LoadShaderLibrary(device, kAtmosphereLUTShaderLibrary, {
-        "transmittance_main", "skyView_main"
+        "transmittance_main", "multiScattering_main", "skyView_main"
     });
 
     MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);
@@ -83,6 +98,31 @@ void AtmosphereLUT::Setup(MetalContext &context) {
         m_transmittanceArgumentTable = device->newArgumentTable(argTableDesc, &error);
         LOG_ERROR_IF(!m_transmittanceArgumentTable, "Failed to create transmittance argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
         m_transmittanceArgumentTable->setAddress(m_transmittanceParamsBuffer->GetGPUAddress(), static_cast<NS::UInteger>(TransmittanceBufferIndex::KernelArguments));
+    }
+
+    // ==================== MultiScatteringLUT ====================
+    {
+        MTL4::ComputePipelineDescriptor* pipelineDescriptor = MTL4::ComputePipelineDescriptor::alloc()->init()->autorelease();
+        pipelineDescriptor->setLabel(NS::String::string("AtmosphereMultiScatteringLUT", NS::UTF8StringEncoding));
+        pipelineDescriptor->setComputeFunctionDescriptor(MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "multiScattering_main"));
+        m_multiScatteringLUTPipelineState = compiler->newComputePipelineState(pipelineDescriptor, taskOptions, &error);
+        LOG_ERROR_IF(!m_multiScatteringLUTPipelineState, "Failed to create atmosphere multiScatteringLUT compute pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
+
+        MTL::TextureDescriptor* texDesc = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormat::PixelFormatRGBA16Float, MULTISCATTERING_WIDTH, MULTISCATTERING_HEIGHT, false);
+        texDesc->setStorageMode(MTL::StorageModePrivate);
+        texDesc->setUsage(MTL::TextureUsageShaderWrite | MTL::TextureUsageShaderRead);
+        m_multiScatteringLUT = std::make_unique<Texture>(device, texDesc);
+        m_multiScatteringLUT->GetNative()->setLabel(NS::String::string("Atmosphere MultiScatteringLUT", NS::UTF8StringEncoding));
+
+        m_multiScatteringParamsBuffer = std::make_unique<Buffer>(device, sizeof(MultiScatteringArgumentData), MTL::ResourceStorageModeShared);
+        m_multiScatteringParamsBuffer->GetNative()->setLabel(NS::String::string("AtmosphereMultiScatteringLUT Argument Buffer", NS::UTF8StringEncoding));
+
+        MTL4::ArgumentTableDescriptor* argTableDesc = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
+        argTableDesc->setLabel(NS::String::string("AtmosphereMultiScatteringLUT", NS::UTF8StringEncoding));
+        argTableDesc->setInitializeBindings(true);
+        argTableDesc->setMaxBufferBindCount(static_cast<NS::UInteger>(MultiScatteringBufferIndex::MaxBufferBindCount));
+        m_multiScatteringArgumentTable = device->newArgumentTable(argTableDesc, &error);
+        LOG_ERROR_IF(!m_multiScatteringArgumentTable, "Failed to create multiScattering argument table: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
     }
 
     // ==================== SkyViewLUT ====================
@@ -124,6 +164,7 @@ void AtmosphereLUT::Setup(MetalContext &context) {
 
 void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
     RenderGraphResourceHandle transmittanceLUTHandle = graph.RegisterTexture("AtmosphereTransmittanceLUT", *m_transmittanceLUT);
+    RenderGraphResourceHandle multiScatteringLUTHandle = graph.RegisterTexture("AtmosphereMultiScatteringLUT", *m_multiScatteringLUT);
     for (uint32_t frameSlot = 0; frameSlot < m_skyViewLUTs.size(); ++frameSlot) {
         graph.RegisterFrameLocalTexture("AtmosphereSkyViewLUT", frameSlot, *m_skyViewLUTs[frameSlot]);
         graph.RegisterFrameLocalBuffer("AtmosphereUniformsBuffer", frameSlot, *m_skyViewAtmosphereUniformsBuffers[frameSlot]);
@@ -142,6 +183,11 @@ void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
             data.transmittanceArgumentBuffer = m_transmittanceParamsBuffer->GetNative();
             data.transmittanceLUTHandle      = transmittanceLUTHandle;
 
+            data.multiScatteringPipelineState    = m_multiScatteringLUTPipelineState;
+            data.multiScatteringArgumentTable    = m_multiScatteringArgumentTable;
+            data.multiScatteringArgumentBuffer   = m_multiScatteringParamsBuffer->GetNative();
+            data.multiScatteringLUTHandle        = multiScatteringLUTHandle;
+
             data.skyViewPipelineState             = m_skyViewLUTPipelineState;
             data.skyViewArgumentTable             = m_skyViewArgumentTable;
             data.skyViewLUTHandle                 = skyViewLUTHandle;
@@ -150,6 +196,7 @@ void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
             data.frameUniformHandle               = frameUniformHandle;
 
             builder.WriteTexture(transmittanceLUTHandle);
+            builder.WriteTexture(multiScatteringLUTHandle);
             builder.WriteTexture(skyViewLUTHandle);
             builder.WriteBuffer(atmosphereUniformsHandle);
             builder.WriteBuffer(frameUniformHandle);
@@ -157,6 +204,7 @@ void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
         },
         [this](const PassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             MTL::Texture* transmittanceLUT = resources.GetTexture(data.transmittanceLUTHandle);
+            MTL::Texture* multiScatteringLUT = resources.GetTexture(data.multiScatteringLUTHandle);
             MTL::Texture* skyViewLUT = resources.GetTexture(data.skyViewLUTHandle);
             MTL::Buffer* atmosphereUniformsBuffer = resources.GetBuffer(data.atmosphereUniformsHandle);
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
@@ -183,29 +231,47 @@ void AtmosphereLUT::AddToGraph(RenderGraph &graph) {
                 .directionalLights = directionalLightBuffer->gpuAddress(),
                 .param = atmosphereUniformsBuffer->gpuAddress(),
                 .frameUniform = frameUniformBuffer->gpuAddress(),
+                .multiScatteringLUT = multiScatteringLUT->gpuResourceID(),
             };
             memcpy(skyViewArgumentBuffer->contents(), &skyViewArgs, sizeof(SkyViewArgumentData));
             data.skyViewArgumentTable->setAddress(skyViewArgumentBuffer->gpuAddress(), static_cast<NS::UInteger>(SkyViewBufferIndex::KernelArguments));
 
             if (!hasInit) {
                 cmd.AddResource(data.transmittanceArgumentBuffer);
+                cmd.AddResource(data.multiScatteringArgumentBuffer);
             }
             cmd.AddResource(skyViewArgumentBuffer);
             cmd.AddResource(atmosphereUniformsBuffer);
             cmd.AddResource(skyViewLUT);
             cmd.AddResource(transmittanceLUT);
+            cmd.AddResource(multiScatteringLUT);
             cmd.AddResource(directionalLightBuffer);
             cmd.AddResource(frameUniformBuffer);
 
             MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
 
-            // ---- Transmittance LUT (compute once) ----
+            // ---- Transmittance LUT & MultiScattering LUT (compute once) ----
             if (!hasInit) {
                 computeEncoder->setComputePipelineState(data.transmittancePiplineState);
                 computeEncoder->setArgumentTable(data.transmittanceArgumentTable);
                 NS::UInteger tew = data.transmittancePiplineState->threadExecutionWidth();
                 NS::UInteger teh = data.transmittancePiplineState->maxTotalThreadsPerThreadgroup() / tew;
                 computeEncoder->dispatchThreads(MTL::Size(TRANS_WIDTH, TRANS_HEIGHT, 1), MTL::Size(tew, teh, 1));
+                computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+
+                const MultiScatteringArgumentData multiScatteringArgs {
+                    .multiScatteringLUT = multiScatteringLUT->gpuResourceID(),
+                    .transmittanceLUT = transmittanceLUT->gpuResourceID(),
+                    .param = atmosphereUniformsBuffer->gpuAddress(),
+                };
+                m_multiScatteringParamsBuffer->Update(&multiScatteringArgs, sizeof(MultiScatteringArgumentData));
+                data.multiScatteringArgumentTable->setAddress(m_multiScatteringParamsBuffer->GetGPUAddress(), static_cast<NS::UInteger>(MultiScatteringBufferIndex::KernelArguments));
+
+                computeEncoder->setComputePipelineState(data.multiScatteringPipelineState);
+                computeEncoder->setArgumentTable(data.multiScatteringArgumentTable);
+                NS::UInteger tewMS = data.multiScatteringPipelineState->threadExecutionWidth();
+                NS::UInteger tehMS = data.multiScatteringPipelineState->maxTotalThreadsPerThreadgroup() / tewMS;
+                computeEncoder->dispatchThreads(MTL::Size(MULTISCATTERING_WIDTH, MULTISCATTERING_HEIGHT, 1), MTL::Size(tewMS, tehMS, 1));
                 computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
                 hasInit = true;
             }

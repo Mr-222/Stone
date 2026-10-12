@@ -375,7 +375,7 @@ kernel void multiScattering_main(
 
             // 1. Second-Order scattering L2nd integration (Sun base illuminance E_I = 1.0)
             float3 sunTrans     = SampleTransmittanceLUT(args.transmittanceLUT, linearClampSampler, p, planetCenter, sunDir);
-            float3 inScatter    = sigma_s * (1.0f / 4.0f * PI) * sunTrans * 1.0f;
+            float3 inScatter    = sigma_s * (1.0f / (4.0f * PI)) * sunTrans * 1.0f;
             float3 integratedL2 = (inScatter - inScatter * stepTransmittance) / max(sigma_t, float3(1e-5f));
             rayL2 += rayTransmittance * integratedL2;
 

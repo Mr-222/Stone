@@ -12,7 +12,9 @@
 #include <Utility/ShaderLibrary.h>
 
 constexpr const char* kFFTBloomShaderLibrary = STONE_SHADER_DIR "/FFTBloom.metallib";
-constexpr uint32_t kFFTSize = kFFTBloomSize;
+constexpr uint32_t kFFTHalfSize = kFFTBloomSize / 2;
+constexpr size_t kArgumentStride = 64;
+constexpr size_t kArgumentBufferSize = static_cast<size_t>(FFTBloomStep::Count) * kArgumentStride;
 
 struct FFTBloomPrefilterArgumentData {
     MTL::ResourceID sceneColorTexture;
@@ -101,7 +103,7 @@ void FFTBloomPass::Setup(MetalContext& context) {
 
     compiler->release();
 
-    MTL::TextureDescriptor* desc32 = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA32Float, kFFTSize, kFFTSize, false);
+    MTL::TextureDescriptor* desc32 = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA32Float, kFFTBloomSize, kFFTBloomSize, false);
     desc32->setStorageMode(MTL::StorageModePrivate);
     desc32->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
 
@@ -112,7 +114,7 @@ void FFTBloomPass::Setup(MetalContext& context) {
     m_kernelRealTexture = std::make_unique<Texture>(device, desc32);
     m_kernelImagTexture = std::make_unique<Texture>(device, desc32);
 
-    MTL::TextureDescriptor* desc16 = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA16Float, kFFTSize, kFFTSize, false);
+    MTL::TextureDescriptor* desc16 = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA16Float, kFFTBloomSize, kFFTBloomSize, false);
     desc16->setStorageMode(MTL::StorageModePrivate);
     desc16->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
 
@@ -125,7 +127,7 @@ void FFTBloomPass::Setup(MetalContext& context) {
 
     m_argumentBuffers.resize(frameSlotCount);
     for (uint32_t i = 0; i < frameSlotCount; ++i) {
-        m_argumentBuffers[i] = std::make_unique<Buffer>(device, 1024, MTL::ResourceStorageModeShared);
+        m_argumentBuffers[i] = std::make_unique<Buffer>(device, kArgumentBufferSize, MTL::ResourceStorageModeShared);
     }
 
     MTL4::ArgumentTableDescriptor* tableDesc = MTL4::ArgumentTableDescriptor::alloc()->init()->autorelease();
@@ -181,162 +183,115 @@ void FFTBloomPass::AddToGraph(RenderGraph& graph) {
 
             MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
 
+            auto dispatchStep = [&]<typename Args>(FFTBloomStep step, MTL::ComputePipelineState* pipeline, const Args& args, MTL::Size gridSize, MTL::Size groupSize, bool barrier = true) {
+                static_assert(sizeof(Args) <= kArgumentStride);
+                const size_t stepIdx = static_cast<size_t>(step);
+                const size_t offset = stepIdx * kArgumentStride;
+                memcpy(bufferPtr + offset, &args, sizeof(Args));
+                MTL4::ArgumentTable* table = m_argumentTables[stepIdx];
+                table->setAddress(baseGpuAddr + offset, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
+                computeEncoder->setComputePipelineState(pipeline);
+                computeEncoder->setArgumentTable(table);
+                computeEncoder->dispatchThreads(gridSize, groupSize);
+                if (barrier)
+                    computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            };
+
+            const MTL::Size grid2D(kFFTBloomSize, kFFTBloomSize, 1);
+            const MTL::Size group2D(16, 16, 1);
+            const MTL::Size gridH(kFFTHalfSize, kFFTBloomSize, 1);
+            const MTL::Size groupH(kFFTHalfSize, 1, 1);
+            const MTL::Size gridV(kFFTBloomSize, kFFTHalfSize, 1);
+            const MTL::Size groupV(1, kFFTHalfSize, 1);
+
             // 1. Optical PSF generation and forward 2D FFT (regenerated when the screen aspect changes)
             const float pixelAspect = static_cast<float>(sceneColorTexture->width()) / static_cast<float>(std::max<NS::UInteger>(sceneColorTexture->height(), 1));
             if (!m_kernelInitialized || std::abs(pixelAspect - m_kernelPixelAspect) > 1e-3f) {
-                const FFTBloomPSFArgumentData psfArgs {
+                dispatchStep(FFTBloomStep::PSFGenerate, m_psfGeneratePipelineState, FFTBloomPSFArgumentData{
                     .outRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
                     .outImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
                     .diffractionSpikeCount = 6,
                     .diffractionIntensity = 0.08f,
                     .pixelAspect = pixelAspect,
-                };
-                memcpy(bufferPtr + 0, &psfArgs, sizeof(FFTBloomPSFArgumentData));
-                auto* psfTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::PSFGenerate)];
-                psfTable->setAddress(baseGpuAddr + 0, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-                computeEncoder->setComputePipelineState(m_psfGeneratePipelineState);
-                computeEncoder->setArgumentTable(psfTable);
-                computeEncoder->dispatchThreads(MTL::Size(kFFTSize, kFFTSize, 1), MTL::Size(16, 16, 1));
-                computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+                }, grid2D, group2D);
 
                 // PSF Horizontal FFT: temp -> spatial
-                const FFTBloom1DArgumentData psfHArgs {
+                dispatchStep(FFTBloomStep::PSFFFTHorizontal, m_fft1DHorizontalPipelineState, FFTBloom1DArgumentData{
                     .inRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
                     .inImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
                     .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
                     .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
                     .inverse = 0,
-                    .padding = 0,
-                };
-                memcpy(bufferPtr + 64, &psfHArgs, sizeof(FFTBloom1DArgumentData));
-                auto* psfHTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::PSFFFTHorizontal)];
-                psfHTable->setAddress(baseGpuAddr + 64, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-                computeEncoder->setComputePipelineState(m_fft1DHorizontalPipelineState);
-                computeEncoder->setArgumentTable(psfHTable);
-                computeEncoder->dispatchThreads(MTL::Size(256, kFFTSize, 1), MTL::Size(256, 1, 1));
-                computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+                }, gridH, groupH);
 
                 // PSF Vertical FFT: spatial -> kernel
-                const FFTBloom1DArgumentData psfVArgs {
+                dispatchStep(FFTBloomStep::PSFFFTVertical, m_fft1DVerticalPipelineState, FFTBloom1DArgumentData{
                     .inRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
                     .inImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
                     .outRealTexture = m_kernelRealTexture->GetNative()->gpuResourceID(),
                     .outImagTexture = m_kernelImagTexture->GetNative()->gpuResourceID(),
                     .inverse = 0,
-                    .padding = 0,
-                };
-                memcpy(bufferPtr + 128, &psfVArgs, sizeof(FFTBloom1DArgumentData));
-                auto* psfVTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::PSFFFTVertical)];
-                psfVTable->setAddress(baseGpuAddr + 128, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-                computeEncoder->setComputePipelineState(m_fft1DVerticalPipelineState);
-                computeEncoder->setArgumentTable(psfVTable);
-                computeEncoder->dispatchThreads(MTL::Size(kFFTSize, 256, 1), MTL::Size(1, 256, 1));
-                computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+                }, gridV, groupV);
 
                 m_kernelInitialized = true;
                 m_kernelPixelAspect = pixelAspect;
             }
 
             // 2. Prefilter & Thresholding: sceneColor -> spatial
-            const FFTBloomPrefilterArgumentData prefilterArgs {
+            dispatchStep(FFTBloomStep::Prefilter, m_prefilterPipelineState, FFTBloomPrefilterArgumentData{
                 .sceneColorTexture = sceneColorTexture->gpuResourceID(),
                 .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
                 .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
                 .threshold = 1.0f,
                 .knee = 0.4f,
                 .maxLuma = 280.0f,
-            };
-            memcpy(bufferPtr + 192, &prefilterArgs, sizeof(FFTBloomPrefilterArgumentData));
-            auto* prefilterTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::Prefilter)];
-            prefilterTable->setAddress(baseGpuAddr + 192, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-            computeEncoder->setComputePipelineState(m_prefilterPipelineState);
-            computeEncoder->setArgumentTable(prefilterTable);
-            computeEncoder->dispatchThreads(MTL::Size(kFFTSize, kFFTSize, 1), MTL::Size(16, 16, 1));
-            computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            }, grid2D, group2D);
 
             // 3. Scene Forward Horizontal FFT: spatial -> temp
-            const FFTBloom1DArgumentData sceneHArgs {
+            dispatchStep(FFTBloomStep::SceneFFTHorizontal, m_fft1DHorizontalPipelineState, FFTBloom1DArgumentData{
                 .inRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
                 .inImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
                 .outRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
                 .outImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
                 .inverse = 0,
-                .padding = 0,
-            };
-            memcpy(bufferPtr + 256, &sceneHArgs, sizeof(FFTBloom1DArgumentData));
-            auto* sceneHTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::SceneFFTHorizontal)];
-            sceneHTable->setAddress(baseGpuAddr + 256, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-            computeEncoder->setComputePipelineState(m_fft1DHorizontalPipelineState);
-            computeEncoder->setArgumentTable(sceneHTable);
-            computeEncoder->dispatchThreads(MTL::Size(256, kFFTSize, 1), MTL::Size(256, 1, 1));
-            computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            }, gridH, groupH);
 
             // 4. Scene Forward Vertical FFT: temp -> spatial
-            const FFTBloom1DArgumentData sceneVArgs {
+            dispatchStep(FFTBloomStep::SceneFFTVertical, m_fft1DVerticalPipelineState, FFTBloom1DArgumentData{
                 .inRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
                 .inImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
                 .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
                 .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
                 .inverse = 0,
-                .padding = 0,
-            };
-            memcpy(bufferPtr + 320, &sceneVArgs, sizeof(FFTBloom1DArgumentData));
-            auto* sceneVTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::SceneFFTVertical)];
-            sceneVTable->setAddress(baseGpuAddr + 320, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-            computeEncoder->setComputePipelineState(m_fft1DVerticalPipelineState);
-            computeEncoder->setArgumentTable(sceneVTable);
-            computeEncoder->dispatchThreads(MTL::Size(kFFTSize, 256, 1), MTL::Size(1, 256, 1));
-            computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            }, gridV, groupV);
 
             // 5. Spectral Multiply: spatial * kernel -> temp
-            const FFTBloomSpectralArgumentData spectralArgs {
+            dispatchStep(FFTBloomStep::SpectralMultiply, m_spectralMultiplyPipelineState, FFTBloomSpectralArgumentData{
                 .sceneRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
                 .sceneImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
                 .kernelRealTexture = m_kernelRealTexture->GetNative()->gpuResourceID(),
                 .kernelImagTexture = m_kernelImagTexture->GetNative()->gpuResourceID(),
                 .outRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
                 .outImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
-            };
-            memcpy(bufferPtr + 384, &spectralArgs, sizeof(FFTBloomSpectralArgumentData));
-            auto* spectralTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::SpectralMultiply)];
-            spectralTable->setAddress(baseGpuAddr + 384, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-            computeEncoder->setComputePipelineState(m_spectralMultiplyPipelineState);
-            computeEncoder->setArgumentTable(spectralTable);
-            computeEncoder->dispatchThreads(MTL::Size(kFFTSize, kFFTSize, 1), MTL::Size(16, 16, 1));
-            computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            }, grid2D, group2D);
 
             // 6. Inverse Horizontal FFT: temp -> spatial
-            const FFTBloom1DArgumentData ifftHArgs {
+            dispatchStep(FFTBloomStep::SceneIFFTHorizontal, m_fft1DHorizontalPipelineState, FFTBloom1DArgumentData{
                 .inRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
                 .inImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
                 .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
                 .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
                 .inverse = 1,
-                .padding = 0,
-            };
-            memcpy(bufferPtr + 480, &ifftHArgs, sizeof(FFTBloom1DArgumentData));
-            auto* ifftHTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::SceneIFFTHorizontal)];
-            ifftHTable->setAddress(baseGpuAddr + 480, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-            computeEncoder->setComputePipelineState(m_fft1DHorizontalPipelineState);
-            computeEncoder->setArgumentTable(ifftHTable);
-            computeEncoder->dispatchThreads(MTL::Size(256, kFFTSize, 1), MTL::Size(256, 1, 1));
-            computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            }, gridH, groupH);
 
             // 7. Inverse Vertical FFT: spatial -> bloomTexture (output)
-            const FFTBloom1DArgumentData ifftVArgs {
+            dispatchStep(FFTBloomStep::SceneIFFTVertical, m_fft1DVerticalPipelineState, FFTBloom1DArgumentData{
                 .inRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
                 .inImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
                 .outRealTexture = bloomTexture->gpuResourceID(),
                 .outImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
                 .inverse = 1,
-                .padding = 0,
-            };
-            memcpy(bufferPtr + 544, &ifftVArgs, sizeof(FFTBloom1DArgumentData));
-            auto* ifftVTable = m_argumentTables[static_cast<size_t>(FFTBloomStep::SceneIFFTVertical)];
-            ifftVTable->setAddress(baseGpuAddr + 544, static_cast<NS::UInteger>(FFTBloomBufferIndex::KernelArguments));
-            computeEncoder->setComputePipelineState(m_fft1DVerticalPipelineState);
-            computeEncoder->setArgumentTable(ifftVTable);
-            computeEncoder->dispatchThreads(MTL::Size(kFFTSize, 256, 1), MTL::Size(1, 256, 1));
+            }, gridV, groupV, false);
 
             computeEncoder->endEncoding();
         }

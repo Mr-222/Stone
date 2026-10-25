@@ -50,8 +50,13 @@ fragment float4 tonemapping_fragment(
     device TonemappingFragmentArguments& args [[buffer(TonemappingBufferIndex::FragmentArguments)]])
 {
     constexpr sampler s(coord::normalized, filter::nearest);
+    constexpr sampler linearSampler(coord::normalized, filter::linear, address::clamp_to_edge);
     float4 sceneColor = args.sceneColorTexture.sample(s, in.uv);
-    float headroom = max(args.edrHeadroom, 1.0f);
-    float3 tonemapped = ACES_EDR(sceneColor.rgb, headroom);
+
+    constexpr float kBloomUVScale = float(kFFTBloomContentSize) / float(kFFTBloomSize);
+    float4 bloomColor = args.bloomTexture.sample(linearSampler, in.uv * kBloomUVScale);
+
+    float3 combinedLinear = sceneColor.rgb + bloomColor.rgb * args.bloomIntensity;
+    float3 tonemapped = ACES_EDR(combinedLinear, args.edrHeadroom);
     return float4(tonemapped, 1.0f);
 }

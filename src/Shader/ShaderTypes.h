@@ -140,6 +140,18 @@ struct IndirectCommandBufferExecutionRange {
 #endif
 };
 
+// FFT bloom layout: the scene is stored in the top-left kFFTBloomContentSize^2 region of the kFFTBloomSize^2 FFT buffer,
+// the rest is zero padding. The PSF support must stay within kFFTBloomKernelRadius so that circular convolution never wraps.
+#ifdef __METAL_VERSION__
+constant constexpr uint32_t kFFTBloomSize = 512;
+constant constexpr uint32_t kFFTBloomKernelRadius = 192;
+constant constexpr uint32_t kFFTBloomContentSize = kFFTBloomSize - kFFTBloomKernelRadius;
+#else
+constexpr uint32_t kFFTBloomSize = 512;
+constexpr uint32_t kFFTBloomKernelRadius = 192;
+constexpr uint32_t kFFTBloomContentSize = kFFTBloomSize - kFFTBloomKernelRadius;
+#endif
+
 struct ObjectCullingParams {
     uint32_t primitiveCount;
 };
@@ -243,7 +255,52 @@ enum class TonemappingBufferIndex {
 
 enum class TonemappingFragmentArgumentID {
     SceneColorTexture,
+    BloomTexture,
     EdrHeadroom,
+    BloomIntensity,
+    MaxArgumentID,
+};
+
+enum class FFTBloomBufferIndex {
+    KernelArguments,
+    MaxBufferBindCount,
+};
+
+enum class FFTBloomPrefilterArgumentID {
+    SceneColorTexture,
+    OutRealTexture,
+    OutImagTexture,
+    Threshold,
+    Knee,
+    MaxLuma,
+    MaxArgumentID,
+};
+
+enum class FFTBloom1DArgumentID {
+    InRealTexture,
+    InImagTexture,
+    OutRealTexture,
+    OutImagTexture,
+    Inverse,
+    MaxArgumentID,
+};
+
+enum class FFTBloomSpectralArgumentID {
+    SceneRealTexture,
+    SceneImagTexture,
+    KernelRealTexture,
+    KernelImagTexture,
+    OutRealTexture,
+    OutImagTexture,
+    MaxArgumentID,
+};
+
+enum class FFTBloomPSFArgumentID {
+    OutRealTexture,
+    OutImagTexture,
+    DiffractionSpikeCount,
+    DiffractionIntensity,
+    PixelAspect,
     MaxArgumentID,
 };
 
@@ -386,7 +443,43 @@ struct AtmosphereScatteringFragmentArguments {
 
 struct TonemappingFragmentArguments {
     texture2d<float, access::sample> sceneColorTexture [[id(TonemappingFragmentArgumentID::SceneColorTexture)]];
+    texture2d<float, access::sample> bloomTexture [[id(TonemappingFragmentArgumentID::BloomTexture)]];
     float edrHeadroom [[id(TonemappingFragmentArgumentID::EdrHeadroom)]];
+    float bloomIntensity [[id(TonemappingFragmentArgumentID::BloomIntensity)]];
+};
+
+struct FFTBloomPrefilterArguments {
+    texture2d<float, access::sample> sceneColorTexture [[id(FFTBloomPrefilterArgumentID::SceneColorTexture)]];
+    texture2d<float, access::write> outRealTexture [[id(FFTBloomPrefilterArgumentID::OutRealTexture)]];
+    texture2d<float, access::write> outImagTexture [[id(FFTBloomPrefilterArgumentID::OutImagTexture)]];
+    float threshold [[id(FFTBloomPrefilterArgumentID::Threshold)]];
+    float knee [[id(FFTBloomPrefilterArgumentID::Knee)]];
+    float maxLuma [[id(FFTBloomPrefilterArgumentID::MaxLuma)]];
+};
+
+struct FFTBloom1DArguments {
+    texture2d<float, access::sample> inRealTexture [[id(FFTBloom1DArgumentID::InRealTexture)]];
+    texture2d<float, access::sample> inImagTexture [[id(FFTBloom1DArgumentID::InImagTexture)]];
+    texture2d<float, access::write> outRealTexture [[id(FFTBloom1DArgumentID::OutRealTexture)]];
+    texture2d<float, access::write> outImagTexture [[id(FFTBloom1DArgumentID::OutImagTexture)]];
+    uint32_t inverse [[id(FFTBloom1DArgumentID::Inverse)]];
+};
+
+struct FFTBloomSpectralArguments {
+    texture2d<float, access::sample> sceneRealTexture [[id(FFTBloomSpectralArgumentID::SceneRealTexture)]];
+    texture2d<float, access::sample> sceneImagTexture [[id(FFTBloomSpectralArgumentID::SceneImagTexture)]];
+    texture2d<float, access::sample> kernelRealTexture [[id(FFTBloomSpectralArgumentID::KernelRealTexture)]];
+    texture2d<float, access::sample> kernelImagTexture [[id(FFTBloomSpectralArgumentID::KernelImagTexture)]];
+    texture2d<float, access::write> outRealTexture [[id(FFTBloomSpectralArgumentID::OutRealTexture)]];
+    texture2d<float, access::write> outImagTexture [[id(FFTBloomSpectralArgumentID::OutImagTexture)]];
+};
+
+struct FFTBloomPSFArguments {
+    texture2d<float, access::write> outRealTexture [[id(FFTBloomPSFArgumentID::OutRealTexture)]];
+    texture2d<float, access::write> outImagTexture [[id(FFTBloomPSFArgumentID::OutImagTexture)]];
+    uint32_t diffractionSpikeCount [[id(FFTBloomPSFArgumentID::DiffractionSpikeCount)]];
+    float diffractionIntensity [[id(FFTBloomPSFArgumentID::DiffractionIntensity)]];
+    float pixelAspect [[id(FFTBloomPSFArgumentID::PixelAspect)]];
 };
 
 #endif

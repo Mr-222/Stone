@@ -16,6 +16,7 @@
 #include "Render/TransparentCompositePass.h"
 #include "Render/AtmosphereLUT.h"
 #include "Render/AtmosphereScatteringPass.h"
+#include "Render/FFTBloomPass.h"
 #include "Render/TonemappingPass.h"
 #include "Render/Scene.h"
 #include "Shader/ShaderTypes.h"
@@ -103,6 +104,7 @@ void Renderer::Setup() {
     m_renderGraph->AddPassNode<TransparentObjectCullingPass>("TransparentObjectCulling", *m_metalContext, m_scene->transparentRenderPrimitives.size());
     m_renderGraph->AddPassNode<TransparentDirectLightingPass>("TransparentDirectLighting", *m_metalContext, m_scene->transparentRenderPrimitives.size(), m_scene->GetTextures());
     m_renderGraph->AddPassNode<TransparentCompositePass>("TransparentComposite", *m_metalContext);
+    m_renderGraph->AddPassNode<FFTBloomPass>("FFTBloom", *m_metalContext);
     m_renderGraph->AddPassNode<TonemappingPass>("Tonemapping", *m_metalContext, *m_window);
 
     m_renderGraph->SetDependencyGraph({
@@ -111,7 +113,8 @@ void Renderer::Setup() {
         { "TransparentObjectCulling", { "ObjectCulling" } },
         { "TransparentDirectLighting", { "AtmosphereScattering", "TransparentObjectCulling" } },
         { "TransparentComposite", { "TransparentDirectLighting" } },
-        { "Tonemapping", { "TransparentComposite" } }
+        { "FFTBloom", { "TransparentComposite" } },
+        { "Tonemapping", { "FFTBloom" } }
     });
 
     m_renderGraph->Compile();

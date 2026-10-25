@@ -358,10 +358,6 @@ kernel void multiScattering_main(
         float3 rayL2            = float3(0.0f);
         float3 rayLf            = float3(0.0f); // unitless
 
-        float cosTheta = dot(rayDir, sunDir);
-        float phaseR   = PhaseRayleigh(cosTheta);
-        float phaseM   = PhaseMie(cosTheta);
-
         for (uint step = 0; step < MARCHING_STEPS; ++step)
         {
             float t  = ((float)(step) + 0.5f) * dt;

@@ -12,16 +12,18 @@ constexpr const char* kTonemappingShaderLibrary = STONE_SHADER_DIR "/Tonemapping
 
 struct TonemappingFragmentArgumentData {
     MTL::ResourceID sceneColorTexture;
+    MTL::ResourceID bloomTexture;
     float edrHeadroom;
-    float padding = 0.0f;
+    float bloomIntensity;
 };
-static_assert(sizeof(TonemappingFragmentArgumentData) == 16);
+static_assert(sizeof(TonemappingFragmentArgumentData) == 24);
 
 struct TonemappingPassData {
     RenderGraphColorAttachment colorAttachment;
     MTL::RenderPipelineState* pipelineState = nullptr;
     MTL4::ArgumentTable* argumentTable = nullptr;
     RenderGraphResourceHandle sceneColorHandle;
+    RenderGraphResourceHandle bloomHandle;
 };
 
 TonemappingPass::~TonemappingPass() {
@@ -73,6 +75,7 @@ void TonemappingPass::Setup(MetalContext& context, const Window& window) {
 
 void TonemappingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle sceneColorHandle = graph.DeclareTexture(kSceneColorImageName);
+    RenderGraphResourceHandle bloomHandle = graph.DeclareTexture(kBloomImageName);
     RenderGraphResourceHandle swapchainHandle = graph.DeclareTexture(kSwapchainImageName);
 
     graph.AddPass<TonemappingPassData>(
@@ -85,24 +88,29 @@ void TonemappingPass::AddToGraph(RenderGraph& graph) {
                 .clearColor = MTL::ClearColor::Make(0.0, 0.0, 0.0, 1.0),
             });
             data.sceneColorHandle = sceneColorHandle;
+            data.bloomHandle = bloomHandle;
             data.pipelineState = m_pipelineState;
             data.argumentTable = m_argumentTable;
 
             builder.ReadTexture(sceneColorHandle);
+            builder.ReadTexture(bloomHandle);
         },
         [this](const TonemappingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
             const uint32_t frameSlot = m_context->GetCurrentFrameSlot();
             MTL::Texture* sceneColorTexture = resources.GetTexture(data.sceneColorHandle);
+            MTL::Texture* bloomTexture = resources.GetTexture(data.bloomHandle);
             MTL::Texture* swapchainTexture = resources.GetTexture(data.colorAttachment.texture);
 
             LOG_ERROR_IF(!sceneColorTexture, "Tonemapping: No scene color texture.");
+            LOG_ERROR_IF(!bloomTexture, "Tonemapping: No bloom texture.");
             LOG_ERROR_IF(!swapchainTexture, "Tonemapping: No swapchain texture.");
 
             const float edrHeadroom = m_window ? m_window->GetEDRHeadroom() : 1.0f;
             TonemappingFragmentArgumentData fragmentArguments {
                 .sceneColorTexture = sceneColorTexture->gpuResourceID(),
+                .bloomTexture = bloomTexture->gpuResourceID(),
                 .edrHeadroom = edrHeadroom,
-                .padding = 0.0f,
+                .bloomIntensity = 0.50f,
             };
             m_fragmentArgumentBuffers[frameSlot]->Update(&fragmentArguments, sizeof(fragmentArguments));
 
@@ -110,6 +118,7 @@ void TonemappingPass::AddToGraph(RenderGraph& graph) {
 
             cmd.AddResource(m_fragmentArgumentBuffers[frameSlot]->GetNative());
             cmd.AddResource(sceneColorTexture);
+            cmd.AddResource(bloomTexture);
             cmd.AddResource(swapchainTexture);
 
             MTL4::RenderPassDescriptor* passDescriptor = MTL4::RenderPassDescriptor::alloc()->init()->autorelease();

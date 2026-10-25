@@ -16,16 +16,22 @@ constexpr uint32_t kFFTHalfSize = kFFTBloomSize / 2;
 constexpr size_t kArgumentStride = 64;
 constexpr size_t kArgumentBufferSize = static_cast<size_t>(FFTBloomStep::Count) * kArgumentStride;
 
-struct FFTBloomPrefilterArgumentData {
+struct FFTBloomDownsampleArgumentData {
     MTL::ResourceID sceneColorTexture;
-    MTL::ResourceID outRealTexture;
-    MTL::ResourceID outImagTexture;
+    MTL::ResourceID outTexture;
     float threshold;
     float knee;
     float maxLuma;
     float padding = 0.0f;
 };
-static_assert(sizeof(FFTBloomPrefilterArgumentData) == 40);
+static_assert(sizeof(FFTBloomDownsampleArgumentData) == 32);
+
+struct FFTBloomPrefilterArgumentData {
+    MTL::ResourceID inTexture;
+    MTL::ResourceID outRealTexture;
+    MTL::ResourceID outImagTexture;
+};
+static_assert(sizeof(FFTBloomPrefilterArgumentData) == 24);
 
 struct FFTBloomPSFArgumentData {
     MTL::ResourceID outRealTexture;
@@ -66,6 +72,7 @@ FFTBloomPass::~FFTBloomPass() {
     for (auto* table : m_argumentTables) {
         if (table) table->release();
     }
+    if (m_downsamplePipelineState) m_downsamplePipelineState->release();
     if (m_prefilterPipelineState) m_prefilterPipelineState->release();
     if (m_psfGeneratePipelineState) m_psfGeneratePipelineState->release();
     if (m_fft1DHorizontalPipelineState) m_fft1DHorizontalPipelineState->release();
@@ -79,7 +86,7 @@ void FFTBloomPass::Setup(MetalContext& context) {
     NS::Error* error = nullptr;
 
     ShaderLibrary shaderLibrary = LoadShaderLibrary(device, kFFTBloomShaderLibrary, {
-        "fft_bloom_prefilter", "fft_psf_generate", "fft_1d_horizontal", "fft_1d_vertical", "fft_spectral_multiply"
+        "fft_bloom_downsample", "fft_bloom_prefilter", "fft_psf_generate", "fft_1d_horizontal", "fft_1d_vertical", "fft_spectral_multiply"
     });
 
     MTL4::Compiler* compiler = device->newCompiler(MTL4::CompilerDescriptor::alloc()->init()->autorelease(), &error);
@@ -95,6 +102,7 @@ void FFTBloomPass::Setup(MetalContext& context) {
         return pipeline;
     };
 
+    m_downsamplePipelineState = createComputePipeline("fft_bloom_downsample", "FFTBloomDownsample");
     m_prefilterPipelineState = createComputePipeline("fft_bloom_prefilter", "FFTBloomPrefilter");
     m_psfGeneratePipelineState = createComputePipeline("fft_psf_generate", "FFTBloomPSFGenerate");
     m_fft1DHorizontalPipelineState = createComputePipeline("fft_1d_horizontal", "FFTBloom1DHorizontal");
@@ -237,14 +245,19 @@ void FFTBloomPass::AddToGraph(RenderGraph& graph) {
                 m_kernelPixelAspect = pixelAspect;
             }
 
-            // 2. Prefilter & Thresholding: sceneColor -> spatial
-            dispatchStep(FFTBloomStep::Prefilter, m_prefilterPipelineState, FFTBloomPrefilterArgumentData{
+            // 2. Bright-pass downsample & tent prefilter: sceneColor -> temp -> spatial
+            dispatchStep(FFTBloomStep::PrefilterDownsample, m_downsamplePipelineState, FFTBloomDownsampleArgumentData{
                 .sceneColorTexture = sceneColorTexture->gpuResourceID(),
-                .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
+                .outTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
                 .threshold = 1.0f,
                 .knee = 0.4f,
                 .maxLuma = 280.0f,
+            }, grid2D, group2D);
+
+            dispatchStep(FFTBloomStep::Prefilter, m_prefilterPipelineState, FFTBloomPrefilterArgumentData{
+                .inTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
+                .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
+                .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
             }, grid2D, group2D);
 
             // 3. Scene Forward Horizontal FFT: spatial -> temp

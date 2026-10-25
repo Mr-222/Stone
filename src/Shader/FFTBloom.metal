@@ -30,6 +30,28 @@ float3 BloomBrightPass(float3 color, float threshold, float knee, float maxLuma)
     return chroma * compressedLuma;
 }
 
+kernel void fft_bloom_downsample(
+    uint2 gid [[thread_position_in_grid]],
+    device FFTBloomDownsampleArguments& args [[buffer(FFTBloomBufferIndex::KernelArguments)]])
+{
+    constexpr sampler linearSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    constexpr float invSize = 1.0f / float(kFFTBloomSize);
+
+    float threshold = args.threshold;
+    float knee = max(args.knee, 1e-4f);
+    float maxLuma = max(args.maxLuma, 1.0f);
+
+    float2 centerUV = (float2(gid) + 0.5f) * invSize;
+    float2 offset = float2(0.25f * invSize);
+
+    float3 s0 = BloomBrightPass(args.sceneColorTexture.sample(linearSampler, centerUV + float2(-offset.x, -offset.y)).rgb, threshold, knee, maxLuma);
+    float3 s1 = BloomBrightPass(args.sceneColorTexture.sample(linearSampler, centerUV + float2( offset.x, -offset.y)).rgb, threshold, knee, maxLuma);
+    float3 s2 = BloomBrightPass(args.sceneColorTexture.sample(linearSampler, centerUV + float2(-offset.x,  offset.y)).rgb, threshold, knee, maxLuma);
+    float3 s3 = BloomBrightPass(args.sceneColorTexture.sample(linearSampler, centerUV + float2( offset.x,  offset.y)).rgb, threshold, knee, maxLuma);
+
+    args.outTexture.write(float4((s0 + s1 + s2 + s3) * 0.25f, 1.0f), gid);
+}
+
 kernel void fft_bloom_prefilter(
     uint2 gid [[thread_position_in_grid]],
     device FFTBloomPrefilterArguments& args [[buffer(FFTBloomBufferIndex::KernelArguments)]])
@@ -41,32 +63,26 @@ kernel void fft_bloom_prefilter(
         return;
     }
 
-    float threshold = args.threshold;
-    float knee = max(args.knee, 1e-4f);
-    float maxLuma = max(args.maxLuma, 1.0f);
-
     // Tent downsample spanning +-1 destination texel. Tents spaced one texel apart form a partition of unity, so every
     // source pixel contributes the same total energy regardless of its sub-texel position (no flicker as content moves).
-    int2 srcSize = int2(args.sceneColorTexture.get_width(), args.sceneColorTexture.get_height());
-    float2 footprint = float2(srcSize) / float(kFFTBloomContentSize);
-    float2 center = (float2(gid) + 0.5f) * footprint;
-    int2 pMin = max(int2(floor(center - footprint)), int2(0));
-    int2 pMax = min(int2(ceil(center + footprint)), srcSize - 1);
+    constexpr float kFootprint = float(kFFTBloomSize) / float(kFFTBloomContentSize);
+    float2 center = (float2(gid) + 0.5f) * kFootprint;
+    int2 pMin = max(int2(floor(center - kFootprint)), int2(0));
+    int2 pMax = min(int2(ceil(center + kFootprint)), int2(kFFTBloomSize - 1));
 
     float3 accum = float3(0.0f);
     for (int y = pMin.y; y <= pMax.y; ++y) {
-        float wy = max(1.0f - abs(float(y) + 0.5f - center.y) / footprint.y, 0.0f);
+        float wy = max(1.0f - abs(float(y) + 0.5f - center.y) / kFootprint, 0.0f);
         if (wy <= 0.0f) continue;
 
         for (int x = pMin.x; x <= pMax.x; ++x) {
-            float wx = max(1.0f - abs(float(x) + 0.5f - center.x) / footprint.x, 0.0f);
+            float wx = max(1.0f - abs(float(x) + 0.5f - center.x) / kFootprint, 0.0f);
             if (wx <= 0.0f) continue;
 
-            float3 color = args.sceneColorTexture.read(uint2(x, y)).rgb;
-            accum += BloomBrightPass(color, threshold, knee, maxLuma) * (wx * wy);
+            accum += args.inTexture.read(uint2(x, y)).rgb * (wx * wy);
         }
     }
-    float3 extracted = accum / (footprint.x * footprint.y);
+    float3 extracted = accum / (kFootprint * kFootprint);
 
     args.outRealTexture.write(float4(extracted, 1.0f), gid);
     args.outImagTexture.write(float4(0.0f), gid);

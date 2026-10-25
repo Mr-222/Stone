@@ -266,13 +266,19 @@ enum class FFTBloomBufferIndex {
     MaxBufferBindCount,
 };
 
-enum class FFTBloomPrefilterArgumentID {
+enum class FFTBloomDownsampleArgumentID {
     SceneColorTexture,
-    OutRealTexture,
-    OutImagTexture,
+    OutTexture,
     Threshold,
     Knee,
     MaxLuma,
+    MaxArgumentID,
+};
+
+enum class FFTBloomPrefilterArgumentID {
+    InTexture,
+    OutRealTexture,
+    OutImagTexture,
     MaxArgumentID,
 };
 
@@ -448,13 +454,18 @@ struct TonemappingFragmentArguments {
     float bloomIntensity [[id(TonemappingFragmentArgumentID::BloomIntensity)]];
 };
 
+struct FFTBloomDownsampleArguments {
+    texture2d<float, access::sample> sceneColorTexture [[id(FFTBloomDownsampleArgumentID::SceneColorTexture)]];
+    texture2d<float, access::write> outTexture [[id(FFTBloomDownsampleArgumentID::OutTexture)]];
+    float threshold [[id(FFTBloomDownsampleArgumentID::Threshold)]];
+    float knee [[id(FFTBloomDownsampleArgumentID::Knee)]];
+    float maxLuma [[id(FFTBloomDownsampleArgumentID::MaxLuma)]];
+};
+
 struct FFTBloomPrefilterArguments {
-    texture2d<float, access::sample> sceneColorTexture [[id(FFTBloomPrefilterArgumentID::SceneColorTexture)]];
+    texture2d<float, access::read> inTexture [[id(FFTBloomPrefilterArgumentID::InTexture)]];
     texture2d<float, access::write> outRealTexture [[id(FFTBloomPrefilterArgumentID::OutRealTexture)]];
     texture2d<float, access::write> outImagTexture [[id(FFTBloomPrefilterArgumentID::OutImagTexture)]];
-    float threshold [[id(FFTBloomPrefilterArgumentID::Threshold)]];
-    float knee [[id(FFTBloomPrefilterArgumentID::Knee)]];
-    float maxLuma [[id(FFTBloomPrefilterArgumentID::MaxLuma)]];
 };
 
 struct FFTBloom1DArguments {

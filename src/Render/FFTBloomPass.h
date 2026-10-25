@@ -11,7 +11,8 @@ class MetalContext;
 class Texture;
 
 enum class FFTBloomStep : uint32_t {
-    Prefilter = 0,
+    PrefilterDownsample = 0,
+    Prefilter,
     SceneFFTHorizontal,
     SceneFFTVertical,
     SpectralMultiply,
@@ -36,6 +37,7 @@ public:
 private:
     MetalContext* m_context = nullptr;
 
+    MTL::ComputePipelineState* m_downsamplePipelineState = nullptr;
     MTL::ComputePipelineState* m_prefilterPipelineState = nullptr;
     MTL::ComputePipelineState* m_psfGeneratePipelineState = nullptr;
     MTL::ComputePipelineState* m_fft1DHorizontalPipelineState = nullptr;

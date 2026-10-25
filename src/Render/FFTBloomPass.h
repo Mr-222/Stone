@@ -47,12 +47,9 @@ private:
     std::array<MTL4::ArgumentTable*, static_cast<size_t>(FFTBloomStep::Count)> m_argumentTables;
     std::vector<std::unique_ptr<Buffer>> m_argumentBuffers;
 
-    std::unique_ptr<Texture> m_spatialRealTexture;
-    std::unique_ptr<Texture> m_spatialImagTexture;
-    std::unique_ptr<Texture> m_tempRealTexture;
-    std::unique_ptr<Texture> m_tempImagTexture;
-    std::unique_ptr<Texture> m_kernelRealTexture;
-    std::unique_ptr<Texture> m_kernelImagTexture;
+    std::unique_ptr<Texture> m_spatialTexture;
+    std::unique_ptr<Texture> m_tempTexture;
+    std::unique_ptr<Texture> m_kernelTexture;
     std::vector<std::unique_ptr<Texture>> m_bloomOutputTextures;
 
     bool m_kernelInitialized = false;

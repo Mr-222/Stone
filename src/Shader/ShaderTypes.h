@@ -277,33 +277,26 @@ enum class FFTBloomDownsampleArgumentID {
 
 enum class FFTBloomPrefilterArgumentID {
     InTexture,
-    OutRealTexture,
-    OutImagTexture,
+    OutTexture,
     MaxArgumentID,
 };
 
 enum class FFTBloom1DArgumentID {
-    InRealTexture,
-    InImagTexture,
-    OutRealTexture,
-    OutImagTexture,
+    InTexture,
+    OutTexture,
     Inverse,
     MaxArgumentID,
 };
 
 enum class FFTBloomSpectralArgumentID {
-    SceneRealTexture,
-    SceneImagTexture,
-    KernelRealTexture,
-    KernelImagTexture,
-    OutRealTexture,
-    OutImagTexture,
+    SceneTexture,
+    KernelTexture,
+    OutTexture,
     MaxArgumentID,
 };
 
 enum class FFTBloomPSFArgumentID {
-    OutRealTexture,
-    OutImagTexture,
+    OutTexture,
     DiffractionSpikeCount,
     DiffractionIntensity,
     PixelAspect,
@@ -464,30 +457,23 @@ struct FFTBloomDownsampleArguments {
 
 struct FFTBloomPrefilterArguments {
     texture2d<float, access::read> inTexture [[id(FFTBloomPrefilterArgumentID::InTexture)]];
-    texture2d<float, access::write> outRealTexture [[id(FFTBloomPrefilterArgumentID::OutRealTexture)]];
-    texture2d<float, access::write> outImagTexture [[id(FFTBloomPrefilterArgumentID::OutImagTexture)]];
+    texture2d<float, access::write> outTexture [[id(FFTBloomPrefilterArgumentID::OutTexture)]];
 };
 
 struct FFTBloom1DArguments {
-    texture2d<float, access::sample> inRealTexture [[id(FFTBloom1DArgumentID::InRealTexture)]];
-    texture2d<float, access::sample> inImagTexture [[id(FFTBloom1DArgumentID::InImagTexture)]];
-    texture2d<float, access::write> outRealTexture [[id(FFTBloom1DArgumentID::OutRealTexture)]];
-    texture2d<float, access::write> outImagTexture [[id(FFTBloom1DArgumentID::OutImagTexture)]];
+    texture2d<float, access::read> inTexture [[id(FFTBloom1DArgumentID::InTexture)]];
+    texture2d<float, access::write> outTexture [[id(FFTBloom1DArgumentID::OutTexture)]];
     uint32_t inverse [[id(FFTBloom1DArgumentID::Inverse)]];
 };
 
 struct FFTBloomSpectralArguments {
-    texture2d<float, access::sample> sceneRealTexture [[id(FFTBloomSpectralArgumentID::SceneRealTexture)]];
-    texture2d<float, access::sample> sceneImagTexture [[id(FFTBloomSpectralArgumentID::SceneImagTexture)]];
-    texture2d<float, access::sample> kernelRealTexture [[id(FFTBloomSpectralArgumentID::KernelRealTexture)]];
-    texture2d<float, access::sample> kernelImagTexture [[id(FFTBloomSpectralArgumentID::KernelImagTexture)]];
-    texture2d<float, access::write> outRealTexture [[id(FFTBloomSpectralArgumentID::OutRealTexture)]];
-    texture2d<float, access::write> outImagTexture [[id(FFTBloomSpectralArgumentID::OutImagTexture)]];
+    texture2d<float, access::read> sceneTexture [[id(FFTBloomSpectralArgumentID::SceneTexture)]];
+    texture2d<float, access::read> kernelTexture [[id(FFTBloomSpectralArgumentID::KernelTexture)]];
+    texture2d<float, access::write> outTexture [[id(FFTBloomSpectralArgumentID::OutTexture)]];
 };
 
 struct FFTBloomPSFArguments {
-    texture2d<float, access::write> outRealTexture [[id(FFTBloomPSFArgumentID::OutRealTexture)]];
-    texture2d<float, access::write> outImagTexture [[id(FFTBloomPSFArgumentID::OutImagTexture)]];
+    texture2d<float, access::write> outTexture [[id(FFTBloomPSFArgumentID::OutTexture)]];
     uint32_t diffractionSpikeCount [[id(FFTBloomPSFArgumentID::DiffractionSpikeCount)]];
     float diffractionIntensity [[id(FFTBloomPSFArgumentID::DiffractionIntensity)]];
     float pixelAspect [[id(FFTBloomPSFArgumentID::PixelAspect)]];

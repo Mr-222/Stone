@@ -13,7 +13,7 @@
 
 constexpr const char* kFFTBloomShaderLibrary = STONE_SHADER_DIR "/FFTBloom.metallib";
 constexpr uint32_t kFFTHalfSize = kFFTBloomSize / 2;
-constexpr size_t kArgumentStride = 64;
+constexpr size_t kArgumentStride = 32;
 constexpr size_t kArgumentBufferSize = static_cast<size_t>(FFTBloomStep::Count) * kArgumentStride;
 
 struct FFTBloomDownsampleArgumentData {
@@ -28,40 +28,33 @@ static_assert(sizeof(FFTBloomDownsampleArgumentData) == 32);
 
 struct FFTBloomPrefilterArgumentData {
     MTL::ResourceID inTexture;
-    MTL::ResourceID outRealTexture;
-    MTL::ResourceID outImagTexture;
+    MTL::ResourceID outTexture;
 };
-static_assert(sizeof(FFTBloomPrefilterArgumentData) == 24);
+static_assert(sizeof(FFTBloomPrefilterArgumentData) == 16);
 
 struct FFTBloomPSFArgumentData {
-    MTL::ResourceID outRealTexture;
-    MTL::ResourceID outImagTexture;
+    MTL::ResourceID outTexture;
     uint32_t diffractionSpikeCount;
     float diffractionIntensity;
     float pixelAspect;
     float padding = 0.0f;
 };
-static_assert(sizeof(FFTBloomPSFArgumentData) == 32);
+static_assert(sizeof(FFTBloomPSFArgumentData) == 24);
 
 struct FFTBloom1DArgumentData {
-    MTL::ResourceID inRealTexture;
-    MTL::ResourceID inImagTexture;
-    MTL::ResourceID outRealTexture;
-    MTL::ResourceID outImagTexture;
+    MTL::ResourceID inTexture;
+    MTL::ResourceID outTexture;
     uint32_t inverse;
     uint32_t padding = 0;
 };
-static_assert(sizeof(FFTBloom1DArgumentData) == 40);
+static_assert(sizeof(FFTBloom1DArgumentData) == 24);
 
 struct FFTBloomSpectralArgumentData {
-    MTL::ResourceID sceneRealTexture;
-    MTL::ResourceID sceneImagTexture;
-    MTL::ResourceID kernelRealTexture;
-    MTL::ResourceID kernelImagTexture;
-    MTL::ResourceID outRealTexture;
-    MTL::ResourceID outImagTexture;
+    MTL::ResourceID sceneTexture;
+    MTL::ResourceID kernelTexture;
+    MTL::ResourceID outTexture;
 };
-static_assert(sizeof(FFTBloomSpectralArgumentData) == 48);
+static_assert(sizeof(FFTBloomSpectralArgumentData) == 24);
 
 struct FFTBloomPassData {
     RenderGraphResourceHandle sceneColorHandle;
@@ -115,12 +108,9 @@ void FFTBloomPass::Setup(MetalContext& context) {
     desc32->setStorageMode(MTL::StorageModePrivate);
     desc32->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
 
-    m_spatialRealTexture = std::make_unique<Texture>(device, desc32);
-    m_spatialImagTexture = std::make_unique<Texture>(device, desc32);
-    m_tempRealTexture = std::make_unique<Texture>(device, desc32);
-    m_tempImagTexture = std::make_unique<Texture>(device, desc32);
-    m_kernelRealTexture = std::make_unique<Texture>(device, desc32);
-    m_kernelImagTexture = std::make_unique<Texture>(device, desc32);
+    m_spatialTexture = std::make_unique<Texture>(device, desc32);
+    m_tempTexture = std::make_unique<Texture>(device, desc32);
+    m_kernelTexture = std::make_unique<Texture>(device, desc32);
 
     MTL::TextureDescriptor* desc16 = MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA16Float, kFFTBloomSize, kFFTBloomSize, false);
     desc16->setStorageMode(MTL::StorageModePrivate);
@@ -181,12 +171,9 @@ void FFTBloomPass::AddToGraph(RenderGraph& graph) {
             // Track resources
             cmd.AddResource(sceneColorTexture);
             cmd.AddResource(bloomTexture);
-            cmd.AddResource(m_spatialRealTexture->GetNative());
-            cmd.AddResource(m_spatialImagTexture->GetNative());
-            cmd.AddResource(m_tempRealTexture->GetNative());
-            cmd.AddResource(m_tempImagTexture->GetNative());
-            cmd.AddResource(m_kernelRealTexture->GetNative());
-            cmd.AddResource(m_kernelImagTexture->GetNative());
+            cmd.AddResource(m_spatialTexture->GetNative());
+            cmd.AddResource(m_tempTexture->GetNative());
+            cmd.AddResource(m_kernelTexture->GetNative());
             cmd.AddResource(m_argumentBuffers[frameSlot]->GetNative());
 
             MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
@@ -201,8 +188,7 @@ void FFTBloomPass::AddToGraph(RenderGraph& graph) {
                 computeEncoder->setComputePipelineState(pipeline);
                 computeEncoder->setArgumentTable(table);
                 computeEncoder->dispatchThreads(gridSize, groupSize);
-                if (barrier)
-                    computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+                if (barrier) computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
             };
 
             const MTL::Size grid2D(kFFTBloomSize, kFFTBloomSize, 1);
@@ -216,8 +202,7 @@ void FFTBloomPass::AddToGraph(RenderGraph& graph) {
             const float pixelAspect = static_cast<float>(sceneColorTexture->width()) / static_cast<float>(std::max<NS::UInteger>(sceneColorTexture->height(), 1));
             if (!m_kernelInitialized || std::abs(pixelAspect - m_kernelPixelAspect) > 1e-3f) {
                 dispatchStep(FFTBloomStep::PSFGenerate, m_psfGeneratePipelineState, FFTBloomPSFArgumentData{
-                    .outRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
-                    .outImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
+                    .outTexture = m_tempTexture->GetNative()->gpuResourceID(),
                     .diffractionSpikeCount = 6,
                     .diffractionIntensity = 0.08f,
                     .pixelAspect = pixelAspect,
@@ -225,19 +210,15 @@ void FFTBloomPass::AddToGraph(RenderGraph& graph) {
 
                 // PSF Horizontal FFT: temp -> spatial
                 dispatchStep(FFTBloomStep::PSFFFTHorizontal, m_fft1DHorizontalPipelineState, FFTBloom1DArgumentData{
-                    .inRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
-                    .inImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
-                    .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                    .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
+                    .inTexture = m_tempTexture->GetNative()->gpuResourceID(),
+                    .outTexture = m_spatialTexture->GetNative()->gpuResourceID(),
                     .inverse = 0,
                 }, gridH, groupH);
 
                 // PSF Vertical FFT: spatial -> kernel
                 dispatchStep(FFTBloomStep::PSFFFTVertical, m_fft1DVerticalPipelineState, FFTBloom1DArgumentData{
-                    .inRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                    .inImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
-                    .outRealTexture = m_kernelRealTexture->GetNative()->gpuResourceID(),
-                    .outImagTexture = m_kernelImagTexture->GetNative()->gpuResourceID(),
+                    .inTexture = m_spatialTexture->GetNative()->gpuResourceID(),
+                    .outTexture = m_kernelTexture->GetNative()->gpuResourceID(),
                     .inverse = 0,
                 }, gridV, groupV);
 
@@ -248,61 +229,49 @@ void FFTBloomPass::AddToGraph(RenderGraph& graph) {
             // 2. Bright-pass downsample & tent prefilter: sceneColor -> temp -> spatial
             dispatchStep(FFTBloomStep::PrefilterDownsample, m_downsamplePipelineState, FFTBloomDownsampleArgumentData{
                 .sceneColorTexture = sceneColorTexture->gpuResourceID(),
-                .outTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
+                .outTexture = m_tempTexture->GetNative()->gpuResourceID(),
                 .threshold = 1.0f,
                 .knee = 0.4f,
                 .maxLuma = 280.0f,
             }, grid2D, group2D);
 
             dispatchStep(FFTBloomStep::Prefilter, m_prefilterPipelineState, FFTBloomPrefilterArgumentData{
-                .inTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
-                .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
+                .inTexture = m_tempTexture->GetNative()->gpuResourceID(),
+                .outTexture = m_spatialTexture->GetNative()->gpuResourceID(),
             }, grid2D, group2D);
 
             // 3. Scene Forward Horizontal FFT: spatial -> temp
             dispatchStep(FFTBloomStep::SceneFFTHorizontal, m_fft1DHorizontalPipelineState, FFTBloom1DArgumentData{
-                .inRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                .inImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
-                .outRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
-                .outImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
+                .inTexture = m_spatialTexture->GetNative()->gpuResourceID(),
+                .outTexture = m_tempTexture->GetNative()->gpuResourceID(),
                 .inverse = 0,
             }, gridH, groupH);
 
             // 4. Scene Forward Vertical FFT: temp -> spatial
             dispatchStep(FFTBloomStep::SceneFFTVertical, m_fft1DVerticalPipelineState, FFTBloom1DArgumentData{
-                .inRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
-                .inImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
-                .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
+                .inTexture = m_tempTexture->GetNative()->gpuResourceID(),
+                .outTexture = m_spatialTexture->GetNative()->gpuResourceID(),
                 .inverse = 0,
             }, gridV, groupV);
 
             // 5. Spectral Multiply: spatial * kernel -> temp
             dispatchStep(FFTBloomStep::SpectralMultiply, m_spectralMultiplyPipelineState, FFTBloomSpectralArgumentData{
-                .sceneRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                .sceneImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
-                .kernelRealTexture = m_kernelRealTexture->GetNative()->gpuResourceID(),
-                .kernelImagTexture = m_kernelImagTexture->GetNative()->gpuResourceID(),
-                .outRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
-                .outImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
+                .sceneTexture = m_spatialTexture->GetNative()->gpuResourceID(),
+                .kernelTexture = m_kernelTexture->GetNative()->gpuResourceID(),
+                .outTexture = m_tempTexture->GetNative()->gpuResourceID(),
             }, grid2D, group2D);
 
             // 6. Inverse Horizontal FFT: temp -> spatial
             dispatchStep(FFTBloomStep::SceneIFFTHorizontal, m_fft1DHorizontalPipelineState, FFTBloom1DArgumentData{
-                .inRealTexture = m_tempRealTexture->GetNative()->gpuResourceID(),
-                .inImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
-                .outRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                .outImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
+                .inTexture = m_tempTexture->GetNative()->gpuResourceID(),
+                .outTexture = m_spatialTexture->GetNative()->gpuResourceID(),
                 .inverse = 1,
             }, gridH, groupH);
 
             // 7. Inverse Vertical FFT: spatial -> bloomTexture (output)
             dispatchStep(FFTBloomStep::SceneIFFTVertical, m_fft1DVerticalPipelineState, FFTBloom1DArgumentData{
-                .inRealTexture = m_spatialRealTexture->GetNative()->gpuResourceID(),
-                .inImagTexture = m_spatialImagTexture->GetNative()->gpuResourceID(),
-                .outRealTexture = bloomTexture->gpuResourceID(),
-                .outImagTexture = m_tempImagTexture->GetNative()->gpuResourceID(),
+                .inTexture = m_spatialTexture->GetNative()->gpuResourceID(),
+                .outTexture = bloomTexture->gpuResourceID(),
                 .inverse = 1,
             }, gridV, groupV, false);
 

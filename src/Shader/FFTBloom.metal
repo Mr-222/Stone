@@ -12,6 +12,13 @@ inline float2 ComplexMul(float2 a, float2 b)
     return float2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
 }
 
+// Unpacks the 2D DFTs A(u, v) and B(u, v) of two real signals packed as z = a + i*b using Hermitian symmetry
+inline void UnpackTwoForOne(float2 z, float2 zMirror, thread float2& outA, thread float2& outB)
+{
+    outA = 0.5f * float2(z.x + zMirror.x, z.y - zMirror.y);
+    outB = 0.5f * float2(z.y + zMirror.y, zMirror.x - z.x);
+}
+
 float3 BloomBrightPass(float3 color, float threshold, float knee, float maxLuma)
 {
     float luma = dot(color, float3(0.2126f, 0.7152f, 0.0722f));
@@ -58,8 +65,7 @@ kernel void fft_bloom_prefilter(
 {
     // Zero padding outside the content region guarantees linear (non-wrapping) convolution
     if (gid.x >= kFFTBloomContentSize || gid.y >= kFFTBloomContentSize) {
-        args.outRealTexture.write(float4(0.0f), gid);
-        args.outImagTexture.write(float4(0.0f), gid);
+        args.outTexture.write(float4(0.0f), gid);
         return;
     }
 
@@ -84,8 +90,8 @@ kernel void fft_bloom_prefilter(
     }
     float3 extracted = accum / (kFootprint * kFootprint);
 
-    args.outRealTexture.write(float4(extracted, 1.0f), gid);
-    args.outImagTexture.write(float4(0.0f), gid);
+    // Two-for-one FFT packing: Z_RG = R + i*G in .xy, Z_B = B + i*0 in .zw
+    args.outTexture.write(float4(extracted.r, extracted.g, extracted.b, 0.0f), gid);
 }
 
 kernel void fft_psf_generate(
@@ -141,11 +147,11 @@ kernel void fft_psf_generate(
     float spikeB = computeSpikeChannel(0.85f);
 
     float3 psf = (float3(halo) + float3(spikeR, spikeG, spikeB)) * window;
-    args.outRealTexture.write(float4(psf, 1.0f), gid);
-    args.outImagTexture.write(float4(0.0f), gid);
+    // Two-for-one FFT packing: Z_RG = R + i*G in .xy, Z_B = B + i*0 in .zw
+    args.outTexture.write(float4(psf.r, psf.g, psf.b, 0.0f), gid);
 }
 
-inline void ExecuteFFT1D(bool isVertical, uint lineIdx, uint tid, device FFTBloom1DArguments& args, threadgroup float2* s_r, threadgroup float2* s_g, threadgroup float2* s_b)
+inline void ExecuteFFT1D(bool isVertical, uint lineIdx, uint tid, device FFTBloom1DArguments& args, threadgroup float2* s_rg, threadgroup float2* s_b)
 {
     uint i0 = tid;
     uint i1 = tid + kFFTHalfSize;
@@ -158,18 +164,14 @@ inline void ExecuteFFT1D(bool isVertical, uint lineIdx, uint tid, device FFTBloo
     uint2 coord1 = isVertical ? uint2(lineIdx, i1) : uint2(i1, lineIdx);
 
     // 3. Coalesced global texture read, scattered into bit-reversed shared memory slots
-    float4 r0 = args.inRealTexture.read(coord0);
-    float4 im0 = args.inImagTexture.read(coord0);
-    float4 r1 = args.inRealTexture.read(coord1);
-    float4 im1 = args.inImagTexture.read(coord1);
+    float4 c0 = args.inTexture.read(coord0);
+    float4 c1 = args.inTexture.read(coord1);
 
-    s_r[rev0] = float2(r0.r, im0.r);
-    s_g[rev0] = float2(r0.g, im0.g);
-    s_b[rev0] = float2(r0.b, im0.b);
+    s_rg[rev0] = c0.xy;
+    s_b[rev0] = c0.zw;
 
-    s_r[rev1] = float2(r1.r, im1.r);
-    s_g[rev1] = float2(r1.g, im1.g);
-    s_b[rev1] = float2(r1.b, im1.b);
+    s_rg[rev1] = c1.xy;
+    s_b[rev1] = c1.zw;
 
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
@@ -185,33 +187,26 @@ inline void ExecuteFFT1D(bool isVertical, uint lineIdx, uint tid, device FFTBloo
         float angle = sign * 2.0f * M_PI_F * float(k) / float(m);
         float2 W = float2(cos(angle), sin(angle)); // Twiddle factor W_m^k
 
-        // Complex multiply (t = W * v) and butterfly write-back for R, G, and B
-        float2 u_r = s_r[j], t_r = ComplexMul(W, s_r[j + half_m]);
-        float2 u_g = s_g[j], t_g = ComplexMul(W, s_g[j + half_m]);
+        // Complex multiply (t = W * v) and butterfly write-back for packed RG and B channels
+        float2 u_rg = s_rg[j], t_rg = ComplexMul(W, s_rg[j + half_m]);
         float2 u_b = s_b[j], t_b = ComplexMul(W, s_b[j + half_m]);
 
-        s_r[j] = u_r + t_r; s_r[j + half_m] = u_r - t_r;
-        s_g[j] = u_g + t_g; s_g[j + half_m] = u_g - t_g;
+        s_rg[j] = u_rg + t_rg; s_rg[j + half_m] = u_rg - t_rg;
         s_b[j] = u_b + t_b; s_b[j + half_m] = u_b - t_b;
 
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
 
     float scale = args.inverse ? (1.0f / float(kFFTBloomSize)) : 1.0f;
-    float3 out0 = float3(s_r[i0].x, s_g[i0].x, s_b[i0].x) * scale;
-    float3 out1 = float3(s_r[i1].x, s_g[i1].x, s_b[i1].x) * scale;
-
-    // Clamp negative ringing from spectral truncation (light energy cannot be negative)
     if (isVertical && args.inverse) {
-        out0 = max(out0, 0.0f);
-        out1 = max(out1, 0.0f);
-    }
-
-    args.outRealTexture.write(float4(out0, 1.0f), coord0);
-    args.outRealTexture.write(float4(out1, 1.0f), coord1);
-    if (!isVertical || !args.inverse) {
-        args.outImagTexture.write(float4(s_r[i0].y * scale, s_g[i0].y * scale, s_b[i0].y * scale, 0.0f), coord0);
-        args.outImagTexture.write(float4(s_r[i1].y * scale, s_g[i1].y * scale, s_b[i1].y * scale, 0.0f), coord1);
+        // Final 2D IFFT pass: unpack real R = Re(Z_RG), G = Im(Z_RG), B = Re(Z_B) and clamp negative ringing
+        float3 out0 = max(float3(s_rg[i0].x, s_rg[i0].y, s_b[i0].x) * scale, 0.0f);
+        float3 out1 = max(float3(s_rg[i1].x, s_rg[i1].y, s_b[i1].x) * scale, 0.0f);
+        args.outTexture.write(float4(out0, 1.0f), coord0);
+        args.outTexture.write(float4(out1, 1.0f), coord1);
+    } else {
+        args.outTexture.write(float4(s_rg[i0] * scale, s_b[i0] * scale), coord0);
+        args.outTexture.write(float4(s_rg[i1] * scale, s_b[i1] * scale), coord1);
     }
 }
 
@@ -220,11 +215,10 @@ kernel void fft_1d_vertical(
     uint tid [[thread_index_in_threadgroup]],
     device FFTBloom1DArguments& args [[buffer(FFTBloomBufferIndex::KernelArguments)]])
 {
-    // 1. Allocate 12 KB of fast on-chip shared memory for R, G, B complex numbers (float2 = real, imag)
-    threadgroup float2 s_r[kFFTBloomSize];
-    threadgroup float2 s_g[kFFTBloomSize];
+    // 1. Allocate 8 KB of fast on-chip shared memory for two-for-one packed RG and B complex numbers
+    threadgroup float2 s_rg[kFFTBloomSize];
     threadgroup float2 s_b[kFFTBloomSize];
-    ExecuteFFT1D(true, threadgroup_pos.x, tid, args, s_r, s_g, s_b);
+    ExecuteFFT1D(true, threadgroup_pos.x, tid, args, s_rg, s_b);
 }
 
 kernel void fft_1d_horizontal(
@@ -232,30 +226,38 @@ kernel void fft_1d_horizontal(
     uint tid [[thread_index_in_threadgroup]],
     device FFTBloom1DArguments& args [[buffer(FFTBloomBufferIndex::KernelArguments)]])
 {
-    threadgroup float2 s_r[kFFTBloomSize];
-    threadgroup float2 s_g[kFFTBloomSize];
+    threadgroup float2 s_rg[kFFTBloomSize];
     threadgroup float2 s_b[kFFTBloomSize];
-    ExecuteFFT1D(false, threadgroup_pos.y, tid, args, s_r, s_g, s_b);
+    ExecuteFFT1D(false, threadgroup_pos.y, tid, args, s_rg, s_b);
 }
 
 kernel void fft_spectral_multiply(
     uint2 gid [[thread_position_in_grid]],
     device FFTBloomSpectralArguments& args [[buffer(FFTBloomBufferIndex::KernelArguments)]])
 {
-    float4 sR = args.sceneRealTexture.read(gid);
-    float4 sI = args.sceneImagTexture.read(gid);
-    float4 kR = args.kernelRealTexture.read(gid);
-    float4 kI = args.kernelImagTexture.read(gid);
+    uint2 mirrorGid = uint2((kFFTBloomSize - gid.x) & (kFFTBloomSize - 1), (kFFTBloomSize - gid.y) & (kFFTBloomSize - 1));
 
-    // DC component for each channel to normalize total flux to 1.0
-    float3 kernelDC = max(args.kernelRealTexture.read(uint2(0, 0)).rgb, float3(1e-4f));
+    float4 s = args.sceneTexture.read(gid);
+    float4 sMirror = args.sceneTexture.read(mirrorGid);
+    float4 k = args.kernelTexture.read(gid);
+    float4 kMirror = args.kernelTexture.read(mirrorGid);
+
+    float2 sR, sG, kR, kG;
+    UnpackTwoForOne(s.xy, sMirror.xy, sR, sG);
+    UnpackTwoForOne(k.xy, kMirror.xy, kR, kG);
+    float2 sB = s.zw;
+    float2 kB = k.zw;
+
+    // DC component at (0, 0) for each channel: Re(Z_RG) = DC_R, Im(Z_RG) = DC_G, Re(Z_B) = DC_B
+    float3 kernelDC = max(args.kernelTexture.read(uint2(0, 0)).xyz, float3(1e-4f));
     float3 invDC = 1.0f / kernelDC;
 
-    // Complex multiplication: (A + Bi)(C + Di) = (AC - BD) + (AD + BC)i
-    float2 outR = ComplexMul(float2(sR.r, sI.r), float2(kR.r, kI.r)) * invDC.r;
-    float2 outG = ComplexMul(float2(sR.g, sI.g), float2(kR.g, kI.g)) * invDC.g;
-    float2 outB = ComplexMul(float2(sR.b, sI.b), float2(kR.b, kI.b)) * invDC.b;
+    // Complex multiplication in frequency domain: (A + Bi)(C + Di)
+    float2 outR = ComplexMul(sR, kR) * invDC.r;
+    float2 outG = ComplexMul(sG, kG) * invDC.g;
+    float2 outB = ComplexMul(sB, kB) * invDC.b;
 
-    args.outRealTexture.write(float4(outR.x, outG.x, outB.x, 1.0f), gid);
-    args.outImagTexture.write(float4(outR.y, outG.y, outB.y, 0.0f), gid);
+    // Re-pack R and G for two-for-one 2D IFFT: Out_RG = Out_R + i * Out_G
+    float2 outRG = float2(outR.x - outG.y, outR.y + outG.x);
+    args.outTexture.write(float4(outRG, outB), gid);
 }

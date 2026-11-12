@@ -24,6 +24,7 @@ public:
     std::vector<uint32_t> opaqueIndices;
     std::vector<SubMesh> opaqueSubmeshes;
     std::vector<RenderPrimitive> opaqueRenderPrimitives;
+    uint32_t opaqueMaskedPrimitiveStart = 0; // For double-sided and alpha-test materials
 
     std::vector<Vertex> transparentVertices;
     std::vector<uint32_t> transparentIndices;

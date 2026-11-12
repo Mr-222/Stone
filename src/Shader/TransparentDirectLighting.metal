@@ -1,11 +1,13 @@
 #include "ShaderTypes.h"
 #include "BRDF.h"
 #include "Lighting.h"
+#include "Surface.h"
 
 struct TransparentVertexOut {
     float4 position [[position]];
     float3 worldPosition;
     float3 worldNormal;
+    float4 worldTangent;
     float2 uv;
     uint materialIndex [[flat]];
 };
@@ -43,6 +45,7 @@ vertex TransparentVertexOut transparentDirect_vertex(
     out.position = frame.viewProjection * worldPosition;
     out.worldPosition = worldPosition.xyz;
     out.worldNormal = (primitive.worldNormalMat * float4(gpuVertex.normal, 0.0f)).xyz;
+    out.worldTangent = float4((primitive.worldMat * float4(gpuVertex.tangent.xyz, 0.0f)).xyz, gpuVertex.tangent.w);
     out.uv = gpuVertex.uv;
     out.materialIndex = primitive.materialIndex;
     return out;
@@ -50,28 +53,28 @@ vertex TransparentVertexOut transparentDirect_vertex(
 
 fragment TransparentFragmentOut transparentDirect_fragment(
     TransparentVertexOut in [[stage_in]],
+    bool frontFacing [[front_facing]],
     constant FrameUniform& frame [[buffer(TransparentDirectLightingBufferIndex::FrameUniform)]],
     device TransparentDirectLightingFragmentArguments& args [[buffer(TransparentDirectLightingBufferIndex::FragmentArguments)]])
 {
     constexpr sampler textureSampler(
         coord::normalized,
-        address::clamp_to_edge,
+        address::repeat,
         filter::linear,
-        mip_filter::linear);
+        mip_filter::linear,
+        max_anisotropy(8));
 
     const device GPUMaterial& material = args.materials[in.materialIndex];
+    const Surface surface = SampleSurface(material, args.textures, textureSampler, in.uv, in.worldNormal, in.worldTangent, frontFacing);
 
-    const float4 baseColorSample = args.textures[material.baseColorTextureIndex].sample(textureSampler, in.uv) * material.baseColorFactor;
-    const float4 metallicRoughnessSample = args.textures[material.metallicRoughnessTextureIndex].sample(textureSampler, in.uv);
-
-    const float alpha = baseColorSample.a;
-    const float3 baseColor = baseColorSample.rgb;
-    const float perceptualRoughness = clamp(metallicRoughnessSample.g * material.roughnessFactor, 0.045f, 1.0f);
-    const float metallic = saturate(metallicRoughnessSample.b * material.metallicFactor);
+    const float alpha = surface.alpha;
+    const float3 baseColor = surface.baseColor;
+    const float perceptualRoughness = surface.perceptualRoughness;
+    const float metallic = surface.metallic;
     const float3 diffuseColor = baseColor * (1.0f - metallic);
     const float3 f0 = mix(float3(0.04f), baseColor, metallic);
 
-    float3 n = SafeNormalize(in.worldNormal, float3(0.0f, 1.0f, 0.0f));
+    float3 n = surface.n;
     const float3 v = SafeNormalize(frame.cameraPosition.xyz - in.worldPosition, n);
 
     const device GPULightListInfo& lightListInfo = args.lightListInfo;

@@ -5,6 +5,8 @@
 using namespace metal;
 
 constant constexpr uint32_t kMaxBindlessTextureCount = 1024;
+constant constexpr uint32_t kMaterialFlagAlphaMask = 1u << 0;
+constant constexpr uint32_t kMaterialFlagDoubleSided = 1u << 1;
 
 struct FrameUniform {
     float4x4 viewProjection;
@@ -53,6 +55,10 @@ struct GPUMaterial {
     float roughnessFactor;
     uint32_t baseColorTextureIndex;
     uint32_t metallicRoughnessTextureIndex;
+    uint32_t normalTextureIndex;
+    float normalScale;
+    float alphaCutoff;
+    uint32_t flags;
 };
 
 struct AtmosphereUniforms {
@@ -65,6 +71,8 @@ struct AtmosphereUniforms {
 #include <glm/glm.hpp>
 
 constexpr uint32_t kMaxBindlessTextureCount = 1024;
+constexpr uint32_t kMaterialFlagAlphaMask = 1u << 0;
+constexpr uint32_t kMaterialFlagDoubleSided = 1u << 1;
 
 struct FrameUniform {
     glm::mat4 viewProjection;
@@ -113,6 +121,10 @@ struct GPUMaterial {
     float roughnessFactor;
     uint32_t baseColorTextureIndex;
     uint32_t metallicRoughnessTextureIndex;
+    uint32_t normalTextureIndex;
+    float normalScale;
+    float alphaCutoff;
+    uint32_t flags;
 };
 
 struct AtmosphereUniforms {
@@ -127,7 +139,7 @@ static_assert(sizeof(GPUDirectionalLight) == 32);
 static_assert(sizeof(GPUPointLight) == 32);
 static_assert(sizeof(GPUSpotLight) == 64);
 static_assert(sizeof(GPURenderPrimitive) == 144);
-static_assert(sizeof(GPUMaterial) == 32);
+static_assert(sizeof(GPUMaterial) == 48);
 static_assert(sizeof(AtmosphereUniforms) == 28);
 #endif
 
@@ -154,6 +166,7 @@ constexpr uint32_t kFFTBloomContentSize = kFFTBloomSize - kFFTBloomKernelRadius;
 
 struct ObjectCullingParams {
     uint32_t primitiveCount;
+    uint32_t maskedPrimitiveStart;
 };
 
 struct IndexBufferInfo {
@@ -359,15 +372,16 @@ struct GPUVertex {
     packed_float3 position;
     packed_float3 normal;
     packed_float2 uv;
-    packed_float3 tangent;
+    packed_float4 tangent;
 };
 #else
 struct GPUVertex {
     float position[3];
     float normal[3];
     float uv[2];
-    float tangent[3];
+    float tangent[4];
 };
+static_assert(sizeof(GPUVertex) == 48);
 #endif
 
 #ifdef __METAL_VERSION__

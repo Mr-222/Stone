@@ -19,7 +19,7 @@ public:
     ObjectCullingPass();
     ~ObjectCullingPass();
 
-    void Setup(MetalContext& context, int numPrimitives);
+    void Setup(MetalContext& context, int numPrimitives, int maskedPrimitiveStart);
     void AddToGraph(RenderGraph& graph) override;
 
     static constexpr bool IsCompute = true;

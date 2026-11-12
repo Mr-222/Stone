@@ -7,7 +7,7 @@ bool IsVisible() {
 
 kernel void objectCulling_main(
     uint primitiveID [[thread_position_in_grid]],
-    device IndirectCommandBufferExecutionRange& executionRange [[buffer(ObjectCullingBufferIndex::ExecutionRange)]],
+    device IndirectCommandBufferExecutionRange* executionRanges [[buffer(ObjectCullingBufferIndex::ExecutionRange)]],
     constant ObjectCullingParams& params [[buffer(ObjectCullingBufferIndex::CullingParams)]],
     constant IndexBufferInfo& indexBufferInfo [[buffer(ObjectCullingBufferIndex::IndexBufferInfo)]],
     device GPURenderPrimitive* primitives [[buffer(ObjectCullingBufferIndex::RenderPrimitives)]],
@@ -20,10 +20,12 @@ kernel void objectCulling_main(
     device GPURenderPrimitive& primitive = primitives[primitiveID];
 
     if (IsVisible()) {
-        uint localSlot = atomic_fetch_add_explicit(&executionRange.length, 1, memory_order_relaxed);
-        uint slot = localSlot + executionRange.location;
+        const uint range = primitiveID >= params.maskedPrimitiveStart ? 1 : 0;
+        const uint base = range == 0 ? 0 : params.maskedPrimitiveStart;
+        const uint localSlot = atomic_fetch_add_explicit(&executionRanges[range].length, 1, memory_order_relaxed);
+        const uint slot = base + localSlot;
 
-        visibilities[localSlot].primitiveID = primitiveID;
+        visibilities[slot].primitiveID = primitiveID;
 
         render_command cmd(icb.commandBuffer, slot);
         cmd.draw_indexed_primitives(primitive_type::triangle,

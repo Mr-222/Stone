@@ -16,13 +16,14 @@ public:
     OpaqueDirectLightingPass() = default;
     ~OpaqueDirectLightingPass();
 
-    void Setup(MetalContext& context, int numPrimitives, const std::vector<Texture>& textures);
+    void Setup(MetalContext& context, int numPrimitives, int maskedPrimitiveStart, const std::vector<Texture>& textures);
     void AddToGraph(RenderGraph& graph) override;
 
     static constexpr bool IsCompute = false;
 
 private:
     MTL::RenderPipelineState* m_pipelineState = nullptr;
+    MTL::RenderPipelineState* m_maskedPipelineState = nullptr;
     MTL::DepthStencilState* m_depthStencilState = nullptr;
     MTL4::ArgumentTable* m_argumentTable = nullptr;
 
@@ -30,5 +31,6 @@ private:
     std::unique_ptr<Buffer> m_fragmentArgumentBuffer;
     std::vector<MTL::Texture*> m_textures;
 
-    int m_numPrimitives;
+    int m_numPrimitives = 0;
+    int m_maskedPrimitiveStart = 0;
 };

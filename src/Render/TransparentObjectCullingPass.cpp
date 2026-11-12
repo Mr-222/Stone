@@ -38,6 +38,7 @@ void TransparentObjectCullingPass::Setup(MetalContext& context, const int numPri
 
     const ObjectCullingParams cullingParams {
         .primitiveCount = static_cast<uint32_t>(numPrimitives),
+        .maskedPrimitiveStart = static_cast<uint32_t>(numPrimitives),
     };
     m_cullingParamsBuffer = std::make_unique<Buffer>(device, &cullingParams, sizeof(cullingParams), MTL::ResourceStorageModeShared);
     m_cullingParamsBuffer->GetNative()->setLabel(NS::String::string("Transparent Culling Params Buffer", NS::UTF8StringEncoding));
@@ -139,7 +140,12 @@ void TransparentObjectCullingPass::AddToGraph(RenderGraph& graph) {
             builder.WriteIndirectCommandBuffer(data.indirectCBHandle);
         },
         [this](const TransparentObjectCullingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
-            if (m_numPrimitives == 0) return;
+            if (m_numPrimitives == 0)
+            {
+                auto encoder = cmd.BeginComputePass();
+                encoder->endEncoding();
+                return;
+            }
 
             MTL::Buffer* transparentIndexBuffer = resources.GetBuffer(data.transparentIndexBufferHandle);
             MTL::Buffer* transparentIndexBufferInfo = resources.GetBuffer(data.transparentIndexBufferInfoHandle);

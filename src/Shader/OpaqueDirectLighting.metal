@@ -31,10 +31,12 @@ vertex OpaqueVertexOut opaqueDirect_vertex(
     return out;
 }
 
-fragment float4 opaqueDirect_fragment(
-    OpaqueVertexOut in [[stage_in]],
-    constant FrameUniform& frame [[buffer(OpaqueDirectLightingBufferIndex::FrameUniform)]],
-    device OpaqueDirectLightingFragmentArguments& args [[buffer(OpaqueDirectLightingBufferIndex::FragmentArguments)]])
+template <bool kAlphaTest>
+inline float4 ShadeOpaqueDirect(
+    OpaqueVertexOut in,
+    bool frontFacing,
+    constant FrameUniform& frame,
+    device OpaqueDirectLightingFragmentArguments& args)
 {
     constexpr sampler baseColorSampler(
         coord::normalized,
@@ -43,7 +45,9 @@ fragment float4 opaqueDirect_fragment(
         mip_filter::linear);
 
     const device GPUMaterial& material = args.materials[in.materialIndex];
-    const Surface surface = SampleSurface(material, args.textures, baseColorSampler, in.uv, in.worldNormal, in.worldTangent);
+    const Surface surface = SampleSurface(material, args.textures, baseColorSampler, in.uv, in.worldNormal, in.worldTangent, frontFacing);
+    if (kAlphaTest && (material.flags & kMaterialFlagAlphaMask) != 0 && surface.alpha < material.alphaCutoff)
+        discard_fragment();
 
     const float3 baseColor = surface.baseColor;
     const float perceptualRoughness = surface.perceptualRoughness;
@@ -106,4 +110,22 @@ fragment float4 opaqueDirect_fragment(
     }
 
     return float4(luminance, 1.0f);
+}
+
+fragment float4 opaqueDirect_fragment(
+    OpaqueVertexOut in [[stage_in]],
+    bool frontFacing [[front_facing]],
+    constant FrameUniform& frame [[buffer(OpaqueDirectLightingBufferIndex::FrameUniform)]],
+    device OpaqueDirectLightingFragmentArguments& args [[buffer(OpaqueDirectLightingBufferIndex::FragmentArguments)]])
+{
+    return ShadeOpaqueDirect<false>(in, frontFacing, frame, args);
+}
+
+fragment float4 opaqueDirectMasked_fragment(
+    OpaqueVertexOut in [[stage_in]],
+    bool frontFacing [[front_facing]],
+    constant FrameUniform& frame [[buffer(OpaqueDirectLightingBufferIndex::FrameUniform)]],
+    device OpaqueDirectLightingFragmentArguments& args [[buffer(OpaqueDirectLightingBufferIndex::FragmentArguments)]])
+{
+    return ShadeOpaqueDirect<true>(in, frontFacing, frame, args);
 }

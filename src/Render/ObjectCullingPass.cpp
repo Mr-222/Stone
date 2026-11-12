@@ -30,13 +30,14 @@ ObjectCullingPass::ObjectCullingPass() = default;
 
 ObjectCullingPass::~ObjectCullingPass() = default;
 
-void ObjectCullingPass::Setup(MetalContext& context, const int numPrimitives) {
+void ObjectCullingPass::Setup(MetalContext& context, const int numPrimitives, const int maskedPrimitiveStart) {
     m_numPrimitives = numPrimitives;
 
     MTL::Device* device = context.GetDevice();
 
     const ObjectCullingParams cullingParams {
         .primitiveCount = static_cast<uint32_t>(numPrimitives),
+        .maskedPrimitiveStart = static_cast<uint32_t>(maskedPrimitiveStart),
     };
     m_cullingParamsBuffer = std::make_unique<Buffer>(
         device,
@@ -87,7 +88,7 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numPrimitives) {
 
         resources.executionRangeBuffer = std::make_unique<Buffer>(
             device,
-            sizeof(IndirectCommandBufferExecutionRange),
+            2 * sizeof(IndirectCommandBufferExecutionRange),
             MTL::ResourceStorageModePrivate);
         resources.executionRangeBuffer->GetNative()->setLabel(MakeFrameResourceLabel("Execution Range Buffer", frameSlot));
 

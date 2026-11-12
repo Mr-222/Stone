@@ -1,5 +1,6 @@
 #include "Scene.h"
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <limits>
@@ -321,6 +322,12 @@ void Scene::LoadGltf(std::filesystem::path path) {
         const fastgltf::Material& gltfMaterial = asset->materials[materialIndex];
         const auto& factor = gltfMaterial.pbrData.baseColorFactor;
 
+        uint32_t materialFlags = 0;
+        if (gltfMaterial.alphaMode == fastgltf::AlphaMode::Mask)
+            materialFlags |= kMaterialFlagAlphaMask;
+        if (gltfMaterial.doubleSided)
+            materialFlags |= kMaterialFlagDoubleSided;
+
         SceneMaterial material{
             .baseColorFactor = glm::vec4(factor.x(), factor.y(), factor.z(), factor.w()),
             .metallicFactor = static_cast<float>(gltfMaterial.pbrData.metallicFactor),
@@ -329,8 +336,8 @@ void Scene::LoadGltf(std::filesystem::path path) {
             .metallicRoughnessTextureIndex = 0,
             .normalTextureIndex = 0,
             .normalScale = 1.0f,
-            .alphaCutoff = 0.5f,
-            .flags = 0,
+            .alphaCutoff = static_cast<float>(gltfMaterial.alphaCutoff),
+            .flags = materialFlags,
         };
 
         if (gltfMaterial.pbrData.baseColorTexture.has_value()) {
@@ -425,6 +432,12 @@ void Scene::LoadGltf(std::filesystem::path path) {
             });
         }
     });
+
+    const auto maskedBegin = std::stable_partition(opaqueRenderPrimitives.begin(), opaqueRenderPrimitives.end(), [this](const RenderPrimitive& primitive) {
+        const uint32_t materialIndex = opaqueSubmeshes[primitive.submeshIndex].materialIndex;
+        return (materials[materialIndex].flags & (kMaterialFlagAlphaMask | kMaterialFlagDoubleSided)) == 0;
+    });
+    opaqueMaskedPrimitiveStart = static_cast<uint32_t>(std::distance(opaqueRenderPrimitives.begin(), maskedBegin));
 }
 
 void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPool, MTL4::CommandQueue* queue) {

@@ -5,6 +5,8 @@
 using namespace metal;
 
 constant constexpr uint32_t kMaxBindlessTextureCount = 1024;
+constant constexpr uint32_t kMaterialFlagAlphaMask = 1u << 0;
+constant constexpr uint32_t kMaterialFlagDoubleSided = 1u << 1;
 
 struct FrameUniform {
     float4x4 viewProjection;
@@ -69,6 +71,8 @@ struct AtmosphereUniforms {
 #include <glm/glm.hpp>
 
 constexpr uint32_t kMaxBindlessTextureCount = 1024;
+constexpr uint32_t kMaterialFlagAlphaMask = 1u << 0;
+constexpr uint32_t kMaterialFlagDoubleSided = 1u << 1;
 
 struct FrameUniform {
     glm::mat4 viewProjection;
@@ -162,6 +166,7 @@ constexpr uint32_t kFFTBloomContentSize = kFFTBloomSize - kFFTBloomKernelRadius;
 
 struct ObjectCullingParams {
     uint32_t primitiveCount;
+    uint32_t maskedPrimitiveStart;
 };
 
 struct IndexBufferInfo {

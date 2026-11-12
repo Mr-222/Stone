@@ -29,6 +29,7 @@ struct OpaqueDirectLightingPassData {
     RenderGraphColorAttachment colorAttachment;
     RenderGraphDepthAttachment depthAttachment;
     MTL::RenderPipelineState* pipelineState = nullptr;
+    MTL::RenderPipelineState* maskedPipelineState = nullptr;
     MTL::DepthStencilState* depthStencilState = nullptr;
     MTL4::ArgumentTable* argumentTable = nullptr;
     MTL::Buffer* vertexArgumentBuffer = nullptr;
@@ -45,6 +46,7 @@ struct OpaqueDirectLightingPassData {
     RenderGraphResourceHandle indirectCBHandle;
     std::vector<MTL::Texture*> textures;
     int numPrimitives;
+    int maskedPrimitiveStart;
 };
 
 OpaqueDirectLightingPass::~OpaqueDirectLightingPass() {
@@ -52,6 +54,8 @@ OpaqueDirectLightingPass::~OpaqueDirectLightingPass() {
         m_argumentTable->release();
     if (m_depthStencilState)
         m_depthStencilState->release();
+    if (m_maskedPipelineState)
+        m_maskedPipelineState->release();
     if (m_pipelineState)
         m_pipelineState->release();
 }
@@ -59,9 +63,11 @@ OpaqueDirectLightingPass::~OpaqueDirectLightingPass() {
 void OpaqueDirectLightingPass::Setup(
     MetalContext& context,
     const int numPrimitives,
+    const int maskedPrimitiveStart,
     const std::vector<Texture>& textures)
 {
     m_numPrimitives = numPrimitives;
+    m_maskedPrimitiveStart = maskedPrimitiveStart;
     m_textures.reserve(textures.size());
     for (size_t textureIndex = 0; textureIndex < textures.size(); ++textureIndex) {
         MTL::Texture* texture = textures[textureIndex].GetNative();
@@ -88,6 +94,7 @@ void OpaqueDirectLightingPass::Setup(
     ShaderLibrary shaderLibrary = LoadShaderLibrary(device, kOpaqueDirectLightingShaderLibrary, {
         "opaqueDirect_vertex",
         "opaqueDirect_fragment",
+        "opaqueDirectMasked_fragment",
     });
 
     MTL4::RenderPipelineDescriptor* pipelineDescriptor = MTL4::RenderPipelineDescriptor::alloc()->init()->autorelease();
@@ -95,6 +102,7 @@ void OpaqueDirectLightingPass::Setup(
 
     MTL4::LibraryFunctionDescriptor* vertexFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "opaqueDirect_vertex");
     MTL4::LibraryFunctionDescriptor* fragmentFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "opaqueDirect_fragment");
+    MTL4::LibraryFunctionDescriptor* maskedFragmentFunc = MakeLibraryFunctionDescriptor(shaderLibrary.GetLibrary(), "opaqueDirectMasked_fragment");
 
     pipelineDescriptor->setVertexFunctionDescriptor(vertexFunc);
     pipelineDescriptor->setFragmentFunctionDescriptor(fragmentFunc);
@@ -107,6 +115,11 @@ void OpaqueDirectLightingPass::Setup(
     MTL4::CompilerTaskOptions* taskOptions = MTL4::CompilerTaskOptions::alloc()->init()->autorelease();
     m_pipelineState = compiler->newRenderPipelineState(pipelineDescriptor, taskOptions, &error);
     LOG_ERROR_IF(!m_pipelineState, "Failed to create opaque direct lighting render pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
+
+    pipelineDescriptor->setLabel(NS::String::string("OpaqueDirectLightingMasked", NS::UTF8StringEncoding));
+    pipelineDescriptor->setFragmentFunctionDescriptor(maskedFragmentFunc);
+    m_maskedPipelineState = compiler->newRenderPipelineState(pipelineDescriptor, taskOptions, &error);
+    LOG_ERROR_IF(!m_maskedPipelineState, "Failed to create masked opaque direct lighting render pipeline: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
 
     MTL::DepthStencilDescriptor* depthStencilDescriptor = MTL::DepthStencilDescriptor::alloc()->init()->autorelease();
     depthStencilDescriptor->setLabel(NS::String::string("OpaqueDirectLighting Depth State", NS::UTF8StringEncoding));
@@ -178,6 +191,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
                 .clearDepth = 1.0,
             });
             data.pipelineState = m_pipelineState;
+            data.maskedPipelineState = m_maskedPipelineState;
             data.depthStencilState = m_depthStencilState;
             data.argumentTable = m_argumentTable;
             data.vertexArgumentBuffer = m_vertexArgumentBuffer->GetNative();
@@ -194,6 +208,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.indirectCBHandle = indirectCBHandle;
             data.textures = m_textures;
             data.numPrimitives = m_numPrimitives;
+            data.maskedPrimitiveStart = m_maskedPrimitiveStart;
 
             builder.ReadBuffer(frameUniformHandle);
             builder.ReadBuffer(opaqueVertexBufferHandle);
@@ -301,6 +316,7 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
                 colorTexture->width(),
                 colorTexture->height());
             LOG_ERROR_IF(!data.pipelineState, "OpaqueDirectLighting: Pipeline state is null.");
+            LOG_ERROR_IF(!data.maskedPipelineState, "OpaqueDirectLighting: Masked pipeline state is null.");
             LOG_ERROR_IF(!data.depthStencilState, "OpaqueDirectLighting: Depth-stencil state is null.");
             LOG_ERROR_IF(!data.argumentTable, "OpaqueDirectLighting: Argument table is null.");
 
@@ -332,14 +348,22 @@ void OpaqueDirectLightingPass::AddToGraph(RenderGraph& graph) {
                 1.0
             };
 
-            renderEncoder->setRenderPipelineState(data.pipelineState);
             renderEncoder->setDepthStencilState(data.depthStencilState);
             renderEncoder->setViewport(viewport);
-            renderEncoder->setCullMode(MTL::CullModeBack);
             renderEncoder->setFrontFacingWinding(MTL::WindingClockwise);
             renderEncoder->setArgumentTable(data.argumentTable, MTL::RenderStageVertex | MTL::RenderStageFragment);
 
-            renderEncoder->executeCommandsInBuffer(indirectCB, NS::Range(0, data.numPrimitives));
+            if (data.maskedPrimitiveStart > 0) {
+                renderEncoder->setRenderPipelineState(data.pipelineState);
+                renderEncoder->setCullMode(MTL::CullModeBack);
+                renderEncoder->executeCommandsInBuffer(indirectCB, NS::Range(0, data.maskedPrimitiveStart));
+            }
+            const int maskedCount = data.numPrimitives - data.maskedPrimitiveStart;
+            if (maskedCount > 0) {
+                renderEncoder->setRenderPipelineState(data.maskedPipelineState);
+                renderEncoder->setCullMode(MTL::CullModeNone);
+                renderEncoder->executeCommandsInBuffer(indirectCB, NS::Range(data.maskedPrimitiveStart, maskedCount));
+            }
 
             renderEncoder->endEncoding();
         });

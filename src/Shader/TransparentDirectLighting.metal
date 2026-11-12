@@ -53,6 +53,7 @@ vertex TransparentVertexOut transparentDirect_vertex(
 
 fragment TransparentFragmentOut transparentDirect_fragment(
     TransparentVertexOut in [[stage_in]],
+    bool frontFacing [[front_facing]],
     constant FrameUniform& frame [[buffer(TransparentDirectLightingBufferIndex::FrameUniform)]],
     device TransparentDirectLightingFragmentArguments& args [[buffer(TransparentDirectLightingBufferIndex::FragmentArguments)]])
 {
@@ -63,7 +64,7 @@ fragment TransparentFragmentOut transparentDirect_fragment(
         mip_filter::linear);
 
     const device GPUMaterial& material = args.materials[in.materialIndex];
-    const Surface surface = SampleSurface(material, args.textures, textureSampler, in.uv, in.worldNormal, in.worldTangent);
+    const Surface surface = SampleSurface(material, args.textures, textureSampler, in.uv, in.worldNormal, in.worldTangent, frontFacing);
 
     const float alpha = surface.alpha;
     const float3 baseColor = surface.baseColor;

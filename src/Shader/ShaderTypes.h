@@ -53,6 +53,10 @@ struct GPUMaterial {
     float roughnessFactor;
     uint32_t baseColorTextureIndex;
     uint32_t metallicRoughnessTextureIndex;
+    uint32_t normalTextureIndex;
+    float normalScale;
+    float alphaCutoff;
+    uint32_t flags;
 };
 
 struct AtmosphereUniforms {
@@ -113,6 +117,10 @@ struct GPUMaterial {
     float roughnessFactor;
     uint32_t baseColorTextureIndex;
     uint32_t metallicRoughnessTextureIndex;
+    uint32_t normalTextureIndex;
+    float normalScale;
+    float alphaCutoff;
+    uint32_t flags;
 };
 
 struct AtmosphereUniforms {
@@ -127,7 +135,7 @@ static_assert(sizeof(GPUDirectionalLight) == 32);
 static_assert(sizeof(GPUPointLight) == 32);
 static_assert(sizeof(GPUSpotLight) == 64);
 static_assert(sizeof(GPURenderPrimitive) == 144);
-static_assert(sizeof(GPUMaterial) == 32);
+static_assert(sizeof(GPUMaterial) == 48);
 static_assert(sizeof(AtmosphereUniforms) == 28);
 #endif
 
@@ -359,15 +367,16 @@ struct GPUVertex {
     packed_float3 position;
     packed_float3 normal;
     packed_float2 uv;
-    packed_float3 tangent;
+    packed_float4 tangent;
 };
 #else
 struct GPUVertex {
     float position[3];
     float normal[3];
     float uv[2];
-    float tangent[3];
+    float tangent[4];
 };
+static_assert(sizeof(GPUVertex) == 48);
 #endif
 
 #ifdef __METAL_VERSION__

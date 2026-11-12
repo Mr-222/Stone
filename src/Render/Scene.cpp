@@ -163,7 +163,7 @@ LoadedMesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
                 vertex.position = glm::vec3(pos.x(), pos.y(), pos.z());
                 vertex.normal = glm::vec3(0.f, 1.f, 0.f);
                 vertex.uv = glm::vec2(0.f, 0.f);
-                vertex.tangent = glm::vec3(1.f, 0.f, 0.f);
+                vertex.tangent = glm::vec4(0.f, 0.f, 0.f, 0.f);
             });
         }
 
@@ -197,11 +197,13 @@ LoadedMesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
         {
             const auto* tangentIt = it->findAttribute("TANGENT");
             const bool hasTangent = tangentIt != it->attributes.end();
+            const bool hasNormalMap = it->materialIndex.has_value() && asset.materials[it->materialIndex.value()].normalTexture.has_value();
             LOG_WARN_IF(!hasTangent, "Failed to find tangent attribute");
+            LOG_WARN_IF(!hasTangent && hasNormalMap, "Primitive uses normal map but has no tangent attribute");
             if (hasTangent) {
                 auto& tangentAccessor = asset.accessors[tangentIt->accessorIndex];
                 fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(asset, tangentAccessor, [&targetMesh, vertexOffset](fastgltf::math::fvec4 tangent, std::size_t idx) {
-                    targetMesh.vertices->at(vertexOffset + idx).tangent = glm::vec3(tangent.x(), tangent.y(), tangent.z());
+                    targetMesh.vertices->at(vertexOffset + idx).tangent = glm::vec4(tangent.x(), tangent.y(), tangent.z(), tangent.w());
                 });
             }
         }
@@ -325,6 +327,10 @@ void Scene::LoadGltf(std::filesystem::path path) {
             .roughnessFactor = static_cast<float>(gltfMaterial.pbrData.roughnessFactor),
             .baseColorTextureIndex = 0,
             .metallicRoughnessTextureIndex = 0,
+            .normalTextureIndex = 0,
+            .normalScale = 1.0f,
+            .alphaCutoff = 0.5f,
+            .flags = 0,
         };
 
         if (gltfMaterial.pbrData.baseColorTexture.has_value()) {
@@ -359,6 +365,16 @@ void Scene::LoadGltf(std::filesystem::path path) {
                 materialIndex);
 
             material.metallicRoughnessTextureIndex = resolveTextureIndex(textureInfo.textureIndex, false);
+        }
+
+        if (gltfMaterial.normalTexture.has_value()) {
+            const fastgltf::NormalTextureInfo& textureInfo = gltfMaterial.normalTexture.value();
+            LOG_ERROR_IF(textureInfo.textureIndex >= asset->textures.size(), "glTF material {} references invalid normal texture {}.", materialIndex, textureInfo.textureIndex);
+            LOG_WARN_IF(textureInfo.texCoordIndex != 0, "glTF material {} uses TEXCOORD_{} for normal texture, but Stone currently samples TEXCOORD_0.", materialIndex, textureInfo.texCoordIndex);
+            LOG_WARN_IF(textureInfo.transform != nullptr, "glTF material {} has a normal texture transform that is not yet supported.", materialIndex);
+
+            material.normalTextureIndex = resolveTextureIndex(textureInfo.textureIndex, false);
+            material.normalScale = static_cast<float>(textureInfo.scale);
         }
 
         materials.push_back(material);
@@ -551,6 +567,10 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
             .roughnessFactor = material.roughnessFactor,
             .baseColorTextureIndex = material.baseColorTextureIndex,
             .metallicRoughnessTextureIndex = material.metallicRoughnessTextureIndex,
+            .normalTextureIndex = material.normalTextureIndex,
+            .normalScale = material.normalScale,
+            .alphaCutoff = material.alphaCutoff,
+            .flags = material.flags,
         });
     }
     m_materialBuffer = std::make_unique<Buffer>(device, materialEntries.size() * sizeof(GPUMaterial), MTL::ResourceStorageModePrivate);

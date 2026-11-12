@@ -1,11 +1,13 @@
 #include "ShaderTypes.h"
 #include "BRDF.h"
 #include "Lighting.h"
+#include "Surface.h"
 
 struct OpaqueVertexOut {
     float4 position [[position]];
     float3 worldPosition;
     float3 worldNormal;
+    float4 worldTangent;
     float2 uv;
     uint materialIndex [[flat]];
 };
@@ -23,6 +25,7 @@ vertex OpaqueVertexOut opaqueDirect_vertex(
     out.position = frame.viewProjection * worldPosition;
     out.worldPosition = worldPosition.xyz;
     out.worldNormal = (primitive.worldNormalMat * float4(gpuVertex.normal, 0.0f)).xyz;
+    out.worldTangent = float4((primitive.worldMat * float4(gpuVertex.tangent.xyz, 0.0f)).xyz, gpuVertex.tangent.w);
     out.uv = gpuVertex.uv;
     out.materialIndex = primitive.materialIndex;
     return out;
@@ -40,17 +43,15 @@ fragment float4 opaqueDirect_fragment(
         mip_filter::linear);
 
     const device GPUMaterial& material = args.materials[in.materialIndex];
+    const Surface surface = SampleSurface(material, args.textures, baseColorSampler, in.uv, in.worldNormal, in.worldTangent);
 
-    const float4 baseColorSample = args.textures[material.baseColorTextureIndex].sample(baseColorSampler, in.uv) * material.baseColorFactor;
-    const float4 metallicRoughnessSample = args.textures[material.metallicRoughnessTextureIndex].sample(baseColorSampler, in.uv);
-
-    const float3 baseColor = baseColorSample.rgb;
-    const float perceptualRoughness = clamp(metallicRoughnessSample.g * material.roughnessFactor, 0.045f, 1.0f);
-    const float metallic = saturate(metallicRoughnessSample.b * material.metallicFactor);
+    const float3 baseColor = surface.baseColor;
+    const float perceptualRoughness = surface.perceptualRoughness;
+    const float metallic = surface.metallic;
     const float3 diffuseColor = baseColor * (1.0f - metallic);
     const float3 f0 = mix(float3(0.04f), baseColor, metallic);
 
-    float3 n = SafeNormalize(in.worldNormal, float3(0.0f, 1.0f, 0.0f));
+    float3 n = surface.n;
 
     const float3 v = SafeNormalize(frame.cameraPosition.xyz - in.worldPosition, n);
     const device GPULightListInfo& lightListInfo = args.lightListInfo;

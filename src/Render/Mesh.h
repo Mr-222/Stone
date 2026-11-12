@@ -11,7 +11,7 @@ struct Vertex
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec2 uv;
-    glm::vec3 tangent;
+    glm::vec4 tangent;
 };
 
 struct SubMesh
@@ -29,6 +29,10 @@ struct SceneMaterial
     float roughnessFactor = 1.0f;
     uint32_t baseColorTextureIndex = 0;
     uint32_t metallicRoughnessTextureIndex = 0;
+    uint32_t normalTextureIndex = 0;
+    float normalScale = 1.0f;
+    float alphaCutoff = 0.5f;
+    uint32_t flags = 0;
 };
 
 struct Mesh

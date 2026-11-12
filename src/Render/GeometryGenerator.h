@@ -30,10 +30,8 @@ public:
                 float v = (float) lat / tessellation;
                 vertices.back().uv = glm::vec2(u, v);
 
-                vertices.back().tangent = -glm::cross(vertices.back().normal,
-                                                      glm::normalize(glm::vec3{
-                                                          cos(theta) * cos(phi), -sin(theta), cos(theta) * sin(phi)
-                                                      }));
+                const glm::vec3 bitangentDir = glm::normalize(glm::vec3{cos(theta) * cos(phi), -sin(theta), cos(theta) * sin(phi)});
+                vertices.back().tangent = glm::vec4(-glm::cross(vertices.back().normal, bitangentDir), 1.0f);
             }
         }
         int top = vertices.size();
@@ -48,7 +46,7 @@ public:
             float phi = (lon + 0.5f) * 2 * M_PI / tessellation;
             float x = cos(phi);
             float z = sin(phi);
-            vertices.back().tangent = -glm::cross(vertices.back().normal, glm::normalize(glm::vec3{x, 0, z}));
+            vertices.back().tangent = glm::vec4(-glm::cross(vertices.back().normal, glm::normalize(glm::vec3{x, 0, z})), 1.0f);
         }
         for (int lon = 0; lon <= tessellation; ++lon) {
             vertices.emplace_back();
@@ -61,7 +59,7 @@ public:
             float phi = (lon + 0.5f) * 2 * M_PI / tessellation;
             float x = cos(phi);
             float z = sin(phi);
-            vertices.back().tangent = -glm::cross(vertices.back().normal, glm::normalize(glm::vec3{x, 0, z}));
+            vertices.back().tangent = glm::vec4(-glm::cross(vertices.back().normal, glm::normalize(glm::vec3{x, 0, z})), 1.0f);
         }
 
         for (unsigned int lat = 0; lat < tessellation - 2; ++lat) {
@@ -197,11 +195,12 @@ public:
         glm::vec3 bitangent = glm::normalize(glm::cross(tangent, normal));
 
         // in uv space (0, 0) is the top left corner of the picture
+        const glm::vec4 tangent4(tangent, 1.0f);
         vertices = {
-            { pos + -0.5f * size[0] * tangent + -0.5f * size[1] * bitangent, normal, { 0.0f, 0.0f }, tangent },
-            { pos + 0.5f * size[0] * tangent + -0.5f * size[1] * bitangent, normal, { 1.0f, 0.0f }, tangent },
-            { pos + 0.5f * size[0] * tangent + 0.5f * size[1] * bitangent, normal, { 1.0f, 1.0f }, tangent },
-            { pos + -0.5f * size[0] * tangent + 0.5f * size[1] * bitangent, normal, { 0.0f, 1.0f }, tangent },
+            { pos + -0.5f * size[0] * tangent + -0.5f * size[1] * bitangent, normal, { 0.0f, 0.0f }, tangent4 },
+            { pos + 0.5f * size[0] * tangent + -0.5f * size[1] * bitangent, normal, { 1.0f, 0.0f }, tangent4 },
+            { pos + 0.5f * size[0] * tangent + 0.5f * size[1] * bitangent, normal, { 1.0f, 1.0f }, tangent4 },
+            { pos + -0.5f * size[0] * tangent + 0.5f * size[1] * bitangent, normal, { 0.0f, 1.0f }, tangent4 },
         };
         indices = { 0, 2, 1, 0, 3, 2};
 

@@ -59,9 +59,10 @@ fragment TransparentFragmentOut transparentDirect_fragment(
 {
     constexpr sampler textureSampler(
         coord::normalized,
-        address::clamp_to_edge,
+        address::repeat,
         filter::linear,
-        mip_filter::linear);
+        mip_filter::linear,
+        max_anisotropy(8));
 
     const device GPUMaterial& material = args.materials[in.materialIndex];
     const Surface surface = SampleSurface(material, args.textures, textureSampler, in.uv, in.worldNormal, in.worldTangent, frontFacing);

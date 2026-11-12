@@ -39,8 +39,8 @@ void Renderer::Setup() {
     m_sceneColorTextures.resize(frameSlotCount);
 
     CameraConfig config = {
-        .position = glm::vec3(0.0f, 0.0f, -3.0f),
-        .yaw = 90.f,
+        .position = glm::vec3(-11.0f, 1.5f, -0.4f),
+        .yaw = 0.f,
         .pitch = 0.f,
         .fov = 45.f,
         .aspectRatio = 16.0f / 9.0f,
@@ -58,42 +58,45 @@ void Renderer::Setup() {
     }
 
     m_scene = std::make_unique<Scene>();
-    m_scene->LoadGltf("./Models/FlightHelmet/glTF/FlightHelmet.gltf");
+    m_scene->LoadGltf("./Models/Sponza/glTF/Sponza.gltf");
     m_scene->directionalLights = {
         DirectionalLight{
-            .direction = glm::vec3(1.0f, -0.2f, 1.0f),
-            .color = glm::vec3(1.0f, 1.0f, 1.0f),
+            .direction = glm::vec3(0.25f, -1.0f, 0.15f),
+            .color = glm::vec3(1.0f, 0.98f, 0.92f),
             .illuminance = 10.0f,
-        },
-        DirectionalLight{
-            .direction = glm::vec3(-0.8f, -0.4f, -1.0f),
-            .color = glm::vec3(0.35f, 0.55f, 1.0f),
-            .illuminance = 2.0f,
         },
     };
     m_scene->ambientLight = AmbientLight{
         .color = glm::vec3(1.0f),
-        .intensity = 0.03f,
+        .intensity = 0.1f,
     };
     m_scene->pointLights = {
         PointLight{
-            .position = glm::vec3(0.5f, 0.3f, 0.5f),
-            .color = glm::vec3(1.0f, 0.8f, 0.6f),
-            .intensity = 2.0f,
-            .range = 5.0f,
+            .position = glm::vec3(-6.0f, 2.0f, -4.0f),
+            .color = glm::vec3(1.0f, 0.8f, 0.55f),
+            .intensity = 15.0f,
+            .range = 10.0f,
+        },
+        PointLight{
+            .position = glm::vec3(6.0f, 2.0f, -4.0f),
+            .color = glm::vec3(1.0f, 0.8f, 0.55f),
+            .intensity = 15.0f,
+            .range = 10.0f,
+        },
+        PointLight{
+            .position = glm::vec3(-6.0f, 2.0f, 3.5f),
+            .color = glm::vec3(1.0f, 0.8f, 0.55f),
+            .intensity = 15.0f,
+            .range = 10.0f,
+        },
+        PointLight{
+            .position = glm::vec3(6.0f, 2.0f, 3.5f),
+            .color = glm::vec3(1.0f, 0.8f, 0.55f),
+            .intensity = 15.0f,
+            .range = 10.0f,
         },
     };
-    m_scene->spotLights = {
-        SpotLight{
-            .position = glm::vec3(0.0f, 0.5f, -9.0f),
-            .direction = glm::vec3(0.0f, -1.0f, 0.5f),
-            .color = glm::vec3(0.5f, 0.5f, 1.0f),
-            .intensity = 5.0f,
-            .range = 5.0f,
-            .innerAngle = glm::radians(15.0f),
-            .outerAngle = glm::radians(30.0f),
-        },
-    };
+    m_scene->spotLights = {};
     m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);
 

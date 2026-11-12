@@ -140,7 +140,12 @@ void TransparentObjectCullingPass::AddToGraph(RenderGraph& graph) {
             builder.WriteIndirectCommandBuffer(data.indirectCBHandle);
         },
         [this](const TransparentObjectCullingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
-            if (m_numPrimitives == 0) return;
+            if (m_numPrimitives == 0)
+            {
+                auto encoder = cmd.BeginComputePass();
+                encoder->endEncoding();
+                return;
+            }
 
             MTL::Buffer* transparentIndexBuffer = resources.GetBuffer(data.transparentIndexBufferHandle);
             MTL::Buffer* transparentIndexBufferInfo = resources.GetBuffer(data.transparentIndexBufferInfoHandle);

@@ -40,9 +40,10 @@ inline float4 ShadeOpaqueDirect(
 {
     constexpr sampler baseColorSampler(
         coord::normalized,
-        address::clamp_to_edge,
+        address::repeat,
         filter::linear,
-        mip_filter::linear);
+        mip_filter::linear,
+        max_anisotropy(8));
 
     const device GPUMaterial& material = args.materials[in.materialIndex];
     const Surface surface = SampleSurface(material, args.textures, baseColorSampler, in.uv, in.worldNormal, in.worldTangent, frontFacing);

@@ -2,6 +2,7 @@
 
 #ifdef __METAL_VERSION__
 #include <metal_stdlib>
+#include <metal_raytracing>
 using namespace metal;
 
 constant constexpr uint32_t kMaxBindlessTextureCount = 1024;
@@ -38,6 +39,13 @@ struct GPUSpotLight {
     float4 direction;            // xyz = direction (normalized), w = unused
     float4 colorAndIntensity;    // rgb = color, w = luminous intensity (candela)
     float4 scaleOffset;          // x = angleScale, y = angleOffset, zw = unused
+};
+
+struct GPUSubMesh {
+    uint32_t firstIndex;
+    uint32_t indexCount;
+    uint32_t vertexOffset;
+    uint32_t materialIndex;
 };
 
 struct GPURenderPrimitive {
@@ -106,6 +114,13 @@ struct GPUSpotLight {
     glm::vec4 scaleOffset;          // x = angleScale, y = angleOffset, zw = unused
 };
 
+struct GPUSubMesh {
+    uint32_t firstIndex;
+    uint32_t indexCount;
+    uint32_t vertexOffset;
+    uint32_t materialIndex;
+};
+
 struct GPURenderPrimitive {
     uint32_t baseVertex;
     uint32_t firstIndex;
@@ -138,6 +153,7 @@ static_assert(sizeof(GPULightListInfo) == 32);
 static_assert(sizeof(GPUDirectionalLight) == 32);
 static_assert(sizeof(GPUPointLight) == 32);
 static_assert(sizeof(GPUSpotLight) == 64);
+static_assert(sizeof(GPUSubMesh) == 16);
 static_assert(sizeof(GPURenderPrimitive) == 144);
 static_assert(sizeof(GPUMaterial) == 48);
 static_assert(sizeof(AtmosphereUniforms) == 28);
@@ -223,8 +239,12 @@ enum class OpaqueDirectLightingFragmentArgumentID {
     DirectionalLights,
     PointLights,
     SpotLights,
+    AccelerationStructure,
+    OpaqueVertices,
+    OpaqueIndices,
+    OpaqueSubmeshes,
     Textures,
-    MaxArgumentID = 5 + kMaxBindlessTextureCount,
+    MaxArgumentID = 9 + kMaxBindlessTextureCount,
 };
 
 enum class TransparentDirectLightingBufferIndex {
@@ -246,8 +266,12 @@ enum class TransparentDirectLightingFragmentArgumentID {
     DirectionalLights,
     PointLights,
     SpotLights,
+    AccelerationStructure,
+    OpaqueVertices,
+    OpaqueIndices,
+    OpaqueSubmeshes,
     Textures,
-    MaxArgumentID = 5 + kMaxBindlessTextureCount,
+    MaxArgumentID = 9 + kMaxBindlessTextureCount,
 };
 
 enum class TransparentCompositeBufferIndex {
@@ -405,6 +429,10 @@ struct OpaqueDirectLightingFragmentArguments {
     const device GPUDirectionalLight* directionalLights [[id(OpaqueDirectLightingFragmentArgumentID::DirectionalLights)]];
     const device GPUPointLight* pointLights [[id(OpaqueDirectLightingFragmentArgumentID::PointLights)]];
     const device GPUSpotLight* spotLights [[id(OpaqueDirectLightingFragmentArgumentID::SpotLights)]];
+    metal::raytracing::instance_acceleration_structure accelerationStructure [[id(OpaqueDirectLightingFragmentArgumentID::AccelerationStructure)]];
+    const device GPUVertex* opaqueVertices [[id(OpaqueDirectLightingFragmentArgumentID::OpaqueVertices)]];
+    const device uint32_t* opaqueIndices [[id(OpaqueDirectLightingFragmentArgumentID::OpaqueIndices)]];
+    const device GPUSubMesh* opaqueSubmeshes [[id(OpaqueDirectLightingFragmentArgumentID::OpaqueSubmeshes)]];
     const array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(OpaqueDirectLightingFragmentArgumentID::Textures)]];
 };
 
@@ -420,6 +448,10 @@ struct TransparentDirectLightingFragmentArguments {
     const device GPUDirectionalLight* directionalLights [[id(TransparentDirectLightingFragmentArgumentID::DirectionalLights)]];
     const device GPUPointLight* pointLights [[id(TransparentDirectLightingFragmentArgumentID::PointLights)]];
     const device GPUSpotLight* spotLights [[id(TransparentDirectLightingFragmentArgumentID::SpotLights)]];
+    metal::raytracing::instance_acceleration_structure accelerationStructure [[id(TransparentDirectLightingFragmentArgumentID::AccelerationStructure)]];
+    const device GPUVertex* opaqueVertices [[id(TransparentDirectLightingFragmentArgumentID::OpaqueVertices)]];
+    const device uint32_t* opaqueIndices [[id(TransparentDirectLightingFragmentArgumentID::OpaqueIndices)]];
+    const device GPUSubMesh* opaqueSubmeshes [[id(TransparentDirectLightingFragmentArgumentID::OpaqueSubmeshes)]];
     const array<texture2d<float>, kMaxBindlessTextureCount> textures [[id(TransparentDirectLightingFragmentArgumentID::Textures)]];
 };
 

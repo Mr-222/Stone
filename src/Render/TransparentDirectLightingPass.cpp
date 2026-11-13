@@ -22,8 +22,13 @@ struct TransparentDirectLightingFragmentArgumentData {
     MTL::GPUAddress directionalLights;
     MTL::GPUAddress pointLights;
     MTL::GPUAddress spotLights;
+    MTL::ResourceID accelerationStructure;
+    MTL::GPUAddress opaqueVertices;
+    MTL::GPUAddress opaqueIndices;
+    MTL::GPUAddress opaqueSubmeshes;
     std::array<MTL::ResourceID, kMaxBindlessTextureCount> textures;
 };
+static_assert(sizeof(TransparentDirectLightingFragmentArgumentData) == (9 + kMaxBindlessTextureCount) * sizeof(uint64_t));
 
 struct TransparentDirectLightingPassData {
     RenderGraphColorAttachment accumAttachment;
@@ -38,6 +43,9 @@ struct TransparentDirectLightingPassData {
     RenderGraphResourceHandle transparentVertexBufferHandle;
     RenderGraphResourceHandle transparentIndexBufferHandle;
     RenderGraphResourceHandle transparentRenderPrimitiveBufferHandle;
+    RenderGraphResourceHandle opaqueVertexBufferHandle;
+    RenderGraphResourceHandle opaqueIndexBufferHandle;
+    RenderGraphResourceHandle opaqueSubmeshBufferHandle;
     RenderGraphResourceHandle materialBufferHandle;
     RenderGraphResourceHandle lightListInfoBufferHandle;
     RenderGraphResourceHandle directionalLightBufferHandle;
@@ -45,6 +53,7 @@ struct TransparentDirectLightingPassData {
     RenderGraphResourceHandle spotLightBufferHandle;
     RenderGraphResourceHandle transparentIndirectCBHandle;
     std::vector<MTL::Texture*> textures;
+    MTL::ResidencySet* accelResidencySet = nullptr;
     int numPrimitives;
 };
 
@@ -60,9 +69,15 @@ TransparentDirectLightingPass::~TransparentDirectLightingPass() {
 void TransparentDirectLightingPass::Setup(
     MetalContext& context,
     const int numPrimitives,
-    const std::vector<Texture>& textures)
+    const std::vector<Texture>& textures,
+    MTL::AccelerationStructure* tlas,
+    MTL::ResidencySet* accelResidencySet)
 {
     m_numPrimitives = numPrimitives;
+    m_tlas = tlas;
+    m_accelResidencySet = accelResidencySet;
+    LOG_ERROR_IF(!m_tlas, "TransparentDirectLighting requires a valid acceleration structure.");
+    LOG_ERROR_IF(!m_accelResidencySet, "TransparentDirectLighting requires a valid acceleration structure residency set.");
     m_textures.reserve(textures.size());
     for (size_t i = 0; i < textures.size(); ++i) {
         MTL::Texture* texture = textures[i].GetNative();
@@ -173,6 +188,9 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle transparentVertexBufferHandle = graph.DeclareBuffer("TransparentVertexBuffer");
     RenderGraphResourceHandle transparentIndexBufferHandle = graph.DeclareBuffer("TransparentIndexBuffer");
     RenderGraphResourceHandle transparentRenderPrimitiveBufferHandle = graph.DeclareBuffer("TransparentRenderPrimitiveBuffer");
+    RenderGraphResourceHandle opaqueVertexBufferHandle = graph.DeclareBuffer("OpaqueVertexBuffer");
+    RenderGraphResourceHandle opaqueIndexBufferHandle = graph.DeclareBuffer("OpaqueIndexBuffer");
+    RenderGraphResourceHandle opaqueSubmeshBufferHandle = graph.DeclareBuffer("OpaqueSubmeshBuffer");
     RenderGraphResourceHandle materialBufferHandle = graph.DeclareBuffer("MaterialBuffer");
     RenderGraphResourceHandle lightListInfoBufferHandle = graph.DeclareBuffer("LightListInfoBuffer");
     RenderGraphResourceHandle directionalLightBufferHandle = graph.DeclareBuffer("DirectionalLightBuffer");
@@ -208,6 +226,9 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.transparentVertexBufferHandle = transparentVertexBufferHandle;
             data.transparentIndexBufferHandle = transparentIndexBufferHandle;
             data.transparentRenderPrimitiveBufferHandle = transparentRenderPrimitiveBufferHandle;
+            data.opaqueVertexBufferHandle = opaqueVertexBufferHandle;
+            data.opaqueIndexBufferHandle = opaqueIndexBufferHandle;
+            data.opaqueSubmeshBufferHandle = opaqueSubmeshBufferHandle;
             data.materialBufferHandle = materialBufferHandle;
             data.lightListInfoBufferHandle = lightListInfoBufferHandle;
             data.directionalLightBufferHandle = directionalLightBufferHandle;
@@ -215,12 +236,16 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.spotLightBufferHandle = spotLightBufferHandle;
             data.transparentIndirectCBHandle = transparentIndirectCBHandle;
             data.textures = m_textures;
+            data.accelResidencySet = m_accelResidencySet;
             data.numPrimitives = m_numPrimitives;
 
             builder.ReadBuffer(frameUniformHandle);
             builder.ReadBuffer(transparentVertexBufferHandle);
             builder.ReadBuffer(transparentIndexBufferHandle);
             builder.ReadBuffer(transparentRenderPrimitiveBufferHandle);
+            builder.ReadBuffer(opaqueVertexBufferHandle);
+            builder.ReadBuffer(opaqueIndexBufferHandle);
+            builder.ReadBuffer(opaqueSubmeshBufferHandle);
             builder.ReadBuffer(materialBufferHandle);
             builder.ReadBuffer(lightListInfoBufferHandle);
             builder.ReadBuffer(directionalLightBufferHandle);
@@ -239,6 +264,13 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
                 m_vertexArgumentBuffer->Update(&vertexArguments, sizeof(vertexArguments));
             }
 
+            MTL::Buffer* opaqueVertexBuffer = resources.GetBuffer(opaqueVertexBufferHandle);
+            MTL::Buffer* opaqueIndexBuffer = resources.GetBuffer(opaqueIndexBufferHandle);
+            MTL::Buffer* opaqueSubmeshBuffer = resources.GetBuffer(opaqueSubmeshBufferHandle);
+            LOG_ERROR_IF(!opaqueVertexBuffer, "TransparentDirectLighting: Failed to get opaque vertex buffer");
+            LOG_ERROR_IF(!opaqueIndexBuffer, "TransparentDirectLighting: Failed to get opaque index buffer");
+            LOG_ERROR_IF(!opaqueSubmeshBuffer, "TransparentDirectLighting: Failed to get opaque submesh buffer");
+
             MTL::Buffer* materialBuffer = resources.GetBuffer(materialBufferHandle);
             MTL::Buffer* lightListInfoBuffer = resources.GetBuffer(lightListInfoBufferHandle);
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(directionalLightBufferHandle);
@@ -251,6 +283,10 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
                 .directionalLights = directionalLightBuffer->gpuAddress(),
                 .pointLights = pointLightBuffer->gpuAddress(),
                 .spotLights = spotLightBuffer->gpuAddress(),
+                .accelerationStructure = m_tlas->gpuResourceID(),
+                .opaqueVertices = opaqueVertexBuffer->gpuAddress(),
+                .opaqueIndices = opaqueIndexBuffer->gpuAddress(),
+                .opaqueSubmeshes = opaqueSubmeshBuffer->gpuAddress(),
             };
             for (size_t i = 0; i < fragmentArguments.textures.size(); ++i) {
                 MTL::Texture* texture = i < m_textures.size() ? m_textures[i] : m_textures.front();
@@ -264,6 +300,9 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* transparentVertexBuffer = resources.GetBuffer(data.transparentVertexBufferHandle);
             MTL::Buffer* transparentIndexBuffer = resources.GetBuffer(data.transparentIndexBufferHandle);
             MTL::Buffer* transparentRenderPrimitiveBuffer = resources.GetBuffer(data.transparentRenderPrimitiveBufferHandle);
+            MTL::Buffer* opaqueVertexBuffer = resources.GetBuffer(data.opaqueVertexBufferHandle);
+            MTL::Buffer* opaqueIndexBuffer = resources.GetBuffer(data.opaqueIndexBufferHandle);
+            MTL::Buffer* opaqueSubmeshBuffer = resources.GetBuffer(data.opaqueSubmeshBufferHandle);
             MTL::Buffer* materialBuffer = resources.GetBuffer(data.materialBufferHandle);
             MTL::Buffer* lightListInfoBuffer = resources.GetBuffer(data.lightListInfoBufferHandle);
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
@@ -275,6 +314,9 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!transparentVertexBuffer, "TransparentDirectLighting: Failed to get transparent vertex buffer");
             LOG_ERROR_IF(!transparentIndexBuffer, "TransparentDirectLighting: Failed to get transparent index buffer");
             LOG_ERROR_IF(!transparentRenderPrimitiveBuffer, "TransparentDirectLighting: Failed to get transparent render primitive buffer");
+            LOG_ERROR_IF(!opaqueVertexBuffer, "TransparentDirectLighting: Failed to get opaque vertex buffer");
+            LOG_ERROR_IF(!opaqueIndexBuffer, "TransparentDirectLighting: Failed to get opaque index buffer");
+            LOG_ERROR_IF(!opaqueSubmeshBuffer, "TransparentDirectLighting: Failed to get opaque submesh buffer");
             LOG_ERROR_IF(!materialBuffer, "TransparentDirectLighting: Failed to get material buffer");
             LOG_ERROR_IF(!lightListInfoBuffer, "TransparentDirectLighting: Failed to get light list info buffer");
             LOG_ERROR_IF(!directionalLightBuffer, "TransparentDirectLighting: Failed to get directional light buffer");
@@ -288,6 +330,9 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             cmd.AddResource(transparentVertexBuffer);
             cmd.AddResource(transparentIndexBuffer);
             cmd.AddResource(transparentRenderPrimitiveBuffer);
+            cmd.AddResource(opaqueVertexBuffer);
+            cmd.AddResource(opaqueIndexBuffer);
+            cmd.AddResource(opaqueSubmeshBuffer);
             cmd.AddResource(materialBuffer);
             cmd.AddResource(lightListInfoBuffer);
             cmd.AddResource(directionalLightBuffer);
@@ -298,6 +343,7 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             cmd.AddResource(data.fragmentArgumentBuffer);
             for (MTL::Texture* texture : data.textures)
                 cmd.AddResource(texture);
+            cmd.AddResidencySet(data.accelResidencySet);
 
             MTL::Texture* accumTexture = resources.GetTexture(data.accumAttachment.texture);
             MTL::Texture* revealTexture = resources.GetTexture(data.revealAttachment.texture);

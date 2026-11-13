@@ -22,6 +22,12 @@ struct SubMesh
     uint32_t materialIndex;
 };
 
+struct SubMeshRange
+{
+    uint32_t firstSubmesh = 0;
+    uint32_t submeshCount = 0;
+};
+
 struct SceneMaterial
 {
     glm::vec4 baseColorFactor = glm::vec4(1.0f);
@@ -57,6 +63,7 @@ struct Mesh
 struct RenderObject
 {
     glm::mat4 transform;
+    uint32_t meshIndex = 0;
 };
 
 struct RenderPrimitive

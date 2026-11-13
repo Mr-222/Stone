@@ -102,10 +102,10 @@ void Renderer::Setup() {
 
     m_renderGraph->AddPassNode<AtmosphereLUT>("AtmosphereLUT", *m_metalContext);
     m_renderGraph->AddPassNode<ObjectCullingPass>("ObjectCulling", *m_metalContext, m_scene->opaqueRenderPrimitives.size(), m_scene->opaqueMaskedPrimitiveStart);
-    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->opaqueRenderPrimitives.size(), m_scene->opaqueMaskedPrimitiveStart, m_scene->GetTextures());
+    m_renderGraph->AddPassNode<OpaqueDirectLightingPass>("OpaqueDirectLighting", *m_metalContext, m_scene->opaqueRenderPrimitives.size(), m_scene->opaqueMaskedPrimitiveStart, m_scene->GetTextures(), m_scene->GetTLAS(), m_scene->GetAccelerationStructureResidencySet());
     m_renderGraph->AddPassNode<AtmosphereScatteringPass>("AtmosphereScattering", *m_metalContext);
     m_renderGraph->AddPassNode<TransparentObjectCullingPass>("TransparentObjectCulling", *m_metalContext, m_scene->transparentRenderPrimitives.size());
-    m_renderGraph->AddPassNode<TransparentDirectLightingPass>("TransparentDirectLighting", *m_metalContext, m_scene->transparentRenderPrimitives.size(), m_scene->GetTextures());
+    m_renderGraph->AddPassNode<TransparentDirectLightingPass>("TransparentDirectLighting", *m_metalContext, m_scene->transparentRenderPrimitives.size(), m_scene->GetTextures(), m_scene->GetTLAS(), m_scene->GetAccelerationStructureResidencySet());
     m_renderGraph->AddPassNode<TransparentCompositePass>("TransparentComposite", *m_metalContext);
     m_renderGraph->AddPassNode<FFTBloomPass>("FFTBloom", *m_metalContext);
     m_renderGraph->AddPassNode<TonemappingPass>("Tonemapping", *m_metalContext, *m_window);

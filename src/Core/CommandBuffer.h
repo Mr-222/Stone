@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <Metal/Metal.hpp>
 
 class CommandBufferPool;
@@ -15,6 +16,7 @@ public:
     CommandBuffer& operator=(CommandBuffer&&) = delete;
 
     void AddResource(const MTL::Allocation* allocation);
+    void AddResidencySet(const MTL::ResidencySet* residencySet);
     MTL4::RenderCommandEncoder*   BeginRenderPass(MTL4::RenderPassDescriptor* desc);
     MTL4::ComputeCommandEncoder*  BeginComputePass();
     void SubmitTo(MTL4::CommandQueue* submitQueue);
@@ -37,5 +39,6 @@ private:
     MTL4::CommandAllocator* m_allocator;
     MTL::ResidencySet*      m_residencySet;
     NS::SharedPtr<MTL::ResidencySet> m_ownedResidencySet;
+    std::vector<const MTL::ResidencySet*> m_extraResidencySets;
     CommandBufferPool*      m_pool;
 };

@@ -8,6 +8,7 @@
 
 #include "Light.h"
 #include "Mesh.h"
+#include "SceneAccelerationStructure.h"
 #include "Core/Buffer.h"
 #include "Core/RenderGraph.h"
 #include "Core/Texture.h"
@@ -19,10 +20,13 @@ public:
     void RegisterBuffers(RenderGraph& graph);
 
     const std::vector<Texture>& GetTextures() const { return m_textures; }
+    MTL::AccelerationStructure* GetTLAS() const { return m_accelerationStructure.GetTLAS(); }
+    MTL::ResidencySet* GetAccelerationStructureResidencySet() const { return m_accelerationStructure.GetResidencySet(); }
 
     std::vector<Vertex> opaqueVertices;
     std::vector<uint32_t> opaqueIndices;
     std::vector<SubMesh> opaqueSubmeshes;
+    std::vector<SubMeshRange> opaqueMeshes;
     std::vector<RenderPrimitive> opaqueRenderPrimitives;
     uint32_t opaqueMaskedPrimitiveStart = 0; // For double-sided and alpha-test materials
 
@@ -39,16 +43,10 @@ public:
     AmbientLight ambientLight;
 
 private:
-    struct MeshRange
-    {
-        uint32_t firstSubmesh;
-        uint32_t submeshCount;
-    };
-
     struct MeshRanges
     {
-        MeshRange opaqueRange;
-        MeshRange transparentRange;
+        SubMeshRange opaqueRange;
+        SubMeshRange transparentRange;
     };
 
     struct TextureSource
@@ -58,10 +56,11 @@ private:
         std::string name;
     };
 
-    static MeshRange MergeMesh(Mesh&& mesh, std::vector<Vertex>& targetVertices, std::vector<uint32_t>& targetIndices, std::vector<SubMesh>& targetSubmeshes);
+    static SubMeshRange MergeMesh(Mesh&& mesh, std::vector<Vertex>& targetVertices, std::vector<uint32_t>& targetIndices, std::vector<SubMesh>& targetSubmeshes);
 
     std::unique_ptr<Buffer> m_opaqueVertexBuffer;
     std::unique_ptr<Buffer> m_opaqueIndexBuffer;
+    std::unique_ptr<Buffer> m_opaqueSubmeshBuffer;
     std::unique_ptr<Buffer> m_opaqueRenderPrimitiveBuffer;
     std::unique_ptr<Buffer> m_opaqueIndexBufferInfoBuffer;
 
@@ -79,4 +78,5 @@ private:
     std::vector<std::vector<std::byte>> m_encodedImages;
     std::vector<TextureSource> m_textureSources;
     std::vector<Texture> m_textures;
+    SceneAccelerationStructure m_accelerationStructure;
 };

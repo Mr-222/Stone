@@ -16,7 +16,7 @@ public:
     TransparentDirectLightingPass() = default;
     ~TransparentDirectLightingPass();
 
-    void Setup(MetalContext& context, int numPrimitives, const std::vector<Texture>& textures);
+    void Setup(MetalContext& context, int numPrimitives, const std::vector<Texture>& textures, MTL::AccelerationStructure* tlas, MTL::ResidencySet* accelResidencySet);
     void AddToGraph(RenderGraph& graph) override;
 
     static constexpr bool IsCompute = false;
@@ -29,6 +29,8 @@ private:
     std::unique_ptr<Buffer> m_vertexArgumentBuffer;
     std::unique_ptr<Buffer> m_fragmentArgumentBuffer;
     std::vector<MTL::Texture*> m_textures;
+    MTL::AccelerationStructure* m_tlas = nullptr;
+    MTL::ResidencySet* m_accelResidencySet = nullptr;
     std::vector<std::unique_ptr<Texture>> m_oitAccumTextures;
     std::vector<std::unique_ptr<Texture>> m_oitRevealTextures;
 

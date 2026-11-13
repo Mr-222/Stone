@@ -40,6 +40,7 @@ CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
     , m_allocator(other.m_allocator)
     , m_residencySet(other.m_residencySet)
     , m_ownedResidencySet(std::move(other.m_ownedResidencySet))
+    , m_extraResidencySets(std::move(other.m_extraResidencySets))
     , m_pool(other.m_pool)
 {
     other.m_flushGPU = false;
@@ -57,6 +58,11 @@ CommandBuffer::~CommandBuffer() {
 
 void CommandBuffer::AddResource(const MTL::Allocation* allocation) {
     m_residencySet->addAllocation(allocation);
+}
+
+void CommandBuffer::AddResidencySet(const MTL::ResidencySet* residencySet) {
+    if (residencySet)
+        m_extraResidencySets.push_back(residencySet);
 }
 
 void CommandBuffer::Begin() {
@@ -82,6 +88,10 @@ void CommandBuffer::SubmitTo(MTL4::CommandQueue* submitQueue) {
     if (m_residencySet->allocationCount() > 0) {
         m_residencySet->commit();
         m_commandBuffer->useResidencySet(m_residencySet);
+    }
+    if (!m_extraResidencySets.empty()) {
+        m_commandBuffer->useResidencySets(m_extraResidencySets.data(), m_extraResidencySets.size());
+        m_extraResidencySets.clear();
     }
 
     m_commandBuffer->endCommandBuffer();

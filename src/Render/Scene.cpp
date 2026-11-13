@@ -233,7 +233,7 @@ LoadedMesh LoadMesh(const fastgltf::Asset& asset, const fastgltf::Mesh& mesh) {
     return output;
 }
 
-Scene::MeshRange Scene::MergeMesh(Mesh&& mesh, std::vector<Vertex>& targetVertices, std::vector<uint32_t>& targetIndices, std::vector<SubMesh>& targetSubmeshes) {
+SubMeshRange Scene::MergeMesh(Mesh&& mesh, std::vector<Vertex>& targetVertices, std::vector<uint32_t>& targetIndices, std::vector<SubMesh>& targetSubmeshes) {
     const auto vertexOffset = static_cast<uint32_t>(targetVertices.size());
     const auto indexOffset = static_cast<uint32_t>(targetIndices.size());
     const auto firstSubmesh = static_cast<uint32_t>(targetSubmeshes.size());
@@ -251,7 +251,7 @@ Scene::MeshRange Scene::MergeMesh(Mesh&& mesh, std::vector<Vertex>& targetVertic
         });
     }
 
-    return MeshRange{firstSubmesh, submeshCount};
+    return SubMeshRange{firstSubmesh, submeshCount};
 }
 
 void Scene::LoadGltf(std::filesystem::path path) {
@@ -390,6 +390,8 @@ void Scene::LoadGltf(std::filesystem::path path) {
 
     std::vector<MeshRanges> meshRanges;
     meshRanges.reserve(asset->meshes.size());
+    opaqueMeshes.clear();
+    opaqueMeshes.reserve(asset->meshes.size());
     for (auto& gltfMesh : asset->meshes) {
         for (const fastgltf::Primitive& primitive : gltfMesh.primitives) {
             LOG_ERROR_IF(primitive.materialIndex.has_value() && primitive.materialIndex.value() >= asset->materials.size(),
@@ -397,8 +399,9 @@ void Scene::LoadGltf(std::filesystem::path path) {
                 primitive.materialIndex.value());
         }
         LoadedMesh loaded = LoadMesh(asset.get(), gltfMesh);
-        MeshRange opaqueRange = MergeMesh(std::move(loaded.opaqueMesh), opaqueVertices, opaqueIndices, opaqueSubmeshes);
-        MeshRange transparentRange = MergeMesh(std::move(loaded.transparentMesh), transparentVertices, transparentIndices, transparentSubmeshes);
+        SubMeshRange opaqueRange = MergeMesh(std::move(loaded.opaqueMesh), opaqueVertices, opaqueIndices, opaqueSubmeshes);
+        SubMeshRange transparentRange = MergeMesh(std::move(loaded.transparentMesh), transparentVertices, transparentIndices, transparentSubmeshes);
+        opaqueMeshes.push_back(opaqueRange);
         meshRanges.push_back(MeshRanges{opaqueRange, transparentRange});
     }
 
@@ -412,11 +415,10 @@ void Scene::LoadGltf(std::filesystem::path path) {
         const bool invalidMeshIndex = node.meshIndex.value() >= meshRanges.size();
         LOG_ERROR_IF(invalidMeshIndex, "Mesh index {} exceeds mesh range", node.meshIndex.value());
 
-        const auto& meshRange = meshRanges[node.meshIndex.value()];
+        const uint32_t meshIdx = static_cast<uint32_t>(node.meshIndex.value());
+        const auto& meshRange = meshRanges[meshIdx];
         const auto objectIndex = static_cast<uint32_t>(objects.size());
-        objects.push_back(RenderObject{
-            ToGlm(transform),
-        });
+        objects.push_back(RenderObject{ ToGlm(transform), meshIdx });
 
         for (uint32_t i = 0; i < meshRange.opaqueRange.submeshCount; ++i) {
             opaqueRenderPrimitives.push_back(RenderPrimitive{
@@ -531,6 +533,13 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     m_opaqueRenderPrimitiveBuffer->GetNative()->setLabel(NS::String::string("Opaque Render Primitive Buffer", NS::UTF8StringEncoding));
     if (!opaquePrimitiveEntries.empty())
         m_opaqueRenderPrimitiveBuffer->UpdateStaged(opaquePrimitiveEntries.data(), opaquePrimitiveEntries.size() * sizeof(GPURenderPrimitive), 0, commandBufferPool, queue);
+
+    static_assert(sizeof(SubMesh) == sizeof(GPUSubMesh));
+    const size_t opaqueSubmeshBufferSize = std::max(opaqueSubmeshes.size() * sizeof(GPUSubMesh), sizeof(GPUSubMesh));
+    m_opaqueSubmeshBuffer = std::make_unique<Buffer>(device, opaqueSubmeshBufferSize, MTL::ResourceStorageModePrivate);
+    m_opaqueSubmeshBuffer->GetNative()->setLabel(NS::String::string("Opaque Submesh Buffer", NS::UTF8StringEncoding));
+    if (!opaqueSubmeshes.empty())
+        m_opaqueSubmeshBuffer->UpdateStaged(opaqueSubmeshes.data(), opaqueSubmeshes.size() * sizeof(GPUSubMesh), 0, commandBufferPool, queue);
 
     // --- Transparent Geometry Buffers ---
     const size_t transparentVertexBufferSize = std::max(transparentVertices.size() * sizeof(Vertex), sizeof(Vertex));
@@ -658,12 +667,14 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
     m_spotLightBuffer->GetNative()->setLabel(NS::String::string("Spot Light Buffer", NS::UTF8StringEncoding));
     m_spotLightBuffer->UpdateStaged(spotLightEntries.data(), spotLightEntries.size() * sizeof(GPUSpotLight), 0, commandBufferPool, queue);
 
+    m_accelerationStructure.Build(device, *this, *m_opaqueVertexBuffer, *m_opaqueIndexBuffer, commandBufferPool, queue);
 }
 
 void Scene::RegisterBuffers(RenderGraph &graph) {
     graph.RegisterBuffer("OpaqueVertexBuffer", *m_opaqueVertexBuffer);
     graph.RegisterBuffer("OpaqueIndexBuffer", *m_opaqueIndexBuffer);
     graph.RegisterBuffer("OpaqueIndexBufferInfoBuffer", *m_opaqueIndexBufferInfoBuffer);
+    graph.RegisterBuffer("OpaqueSubmeshBuffer", *m_opaqueSubmeshBuffer);
     graph.RegisterBuffer("OpaqueRenderPrimitiveBuffer", *m_opaqueRenderPrimitiveBuffer);
 
     graph.RegisterBuffer("TransparentVertexBuffer", *m_transparentVertexBuffer);

@@ -1,6 +1,7 @@
 #include "ShaderTypes.h"
 #include "BRDF.h"
 #include "Lighting.h"
+#include "RayTracedShadow.h"
 #include "Surface.h"
 
 struct OpaqueVertexOut {
@@ -45,6 +46,11 @@ inline float4 ShadeOpaqueDirect(
         mip_filter::linear,
         max_anisotropy(8));
 
+    const float faceSign = frontFacing ? 1.0f : -1.0f;
+    const float3 vertexNormal = SafeNormalize(in.worldNormal, float3(0.0f, 1.0f, 0.0f)) * faceSign;
+    const float3 geometricNormal = ComputeGeometricNormal(in.worldPosition, vertexNormal);
+    const float3 shadowRayOrigin = OffsetRayOrigin(in.worldPosition, geometricNormal);
+
     const device GPUMaterial& material = args.materials[in.materialIndex];
     const Surface surface = SampleSurface(material, args.textures, baseColorSampler, in.uv, in.worldNormal, in.worldTangent, frontFacing);
     if (kAlphaTest && (material.flags & kMaterialFlagAlphaMask) != 0 && surface.alpha < material.alphaCutoff)
@@ -72,6 +78,10 @@ inline float4 ShadeOpaqueDirect(
         if (NoL <= 0.0f)
             continue;
 
+        const float visibility = TraceShadowRay(args.accelerationStructure, args.opaqueVertices, args.opaqueIndices, args.opaqueSubmeshes, args.materials, args.textures, baseColorSampler, shadowRayOrigin, l, INFINITY);
+        if (visibility <= 0.0f)
+            continue;
+
         const float3 brdf = EvaluateBRDF(n, v, l, diffuseColor, f0, perceptualRoughness, NoL);
         float3 lightColor = max(light.colorAndIlluminance.rgb, 0.0f);
         if (lightIndex == 0)
@@ -87,8 +97,14 @@ inline float4 ShadeOpaqueDirect(
         const float distSq = dot(posToLight, posToLight);
         const float3 l = SafeNormalize(posToLight, n);
         const float NoL = saturate(dot(n, l));
-        if (NoL <= 0.0f) continue;
         const float attenuation = DistanceAttenuation(distSq, 1.0f / light.positionAndRange.w);
+        if (NoL <= 0.0f || attenuation <= 0.0f) continue;
+
+        const float dist = sqrt(distSq);
+        const float visibility = TraceShadowRay(args.accelerationStructure, args.opaqueVertices, args.opaqueIndices, args.opaqueSubmeshes, args.materials, args.textures, baseColorSampler, shadowRayOrigin, l, max(dist - 1e-3f, 0.0f));
+        if (visibility <= 0.0f)
+            continue;
+
         const float3 brdf = EvaluateBRDF(n, v, l, diffuseColor, f0, perceptualRoughness, NoL);
         const float3 lightColor = max(light.colorAndIntensity.rgb, 0.0f);
         const float lightIntensity = max(light.colorAndIntensity.w, 0.0f);
@@ -101,9 +117,16 @@ inline float4 ShadeOpaqueDirect(
         const float distSq = dot(posToLight, posToLight);
         const float3 l = SafeNormalize(posToLight, n);
         const float NoL = saturate(dot(n, l));
-        if (NoL <= 0.0f) continue;
         const float distAtten = DistanceAttenuation(distSq, 1.0f / light.positionAndRange.w);
         const float spotAtten = SpotAngleAttenuation(l, normalize(light.direction.xyz), light.scaleOffset.x, light.scaleOffset.y);
+        if (NoL <= 0.0f || distAtten <= 0.0f || spotAtten <= 0.0f)
+            continue;
+
+        const float dist = sqrt(distSq);
+        const float visibility = TraceShadowRay(args.accelerationStructure, args.opaqueVertices, args.opaqueIndices, args.opaqueSubmeshes, args.materials, args.textures, baseColorSampler, shadowRayOrigin, l, max(dist - 1e-3f, 0.0f));
+        if (visibility <= 0.0f)
+            continue;
+
         const float3 brdf = EvaluateBRDF(n, v, l, diffuseColor, f0, perceptualRoughness, NoL);
         const float3 lightColor = max(light.colorAndIntensity.rgb, 0.0f);
         const float lightIntensity = max(light.colorAndIntensity.w, 0.0f);

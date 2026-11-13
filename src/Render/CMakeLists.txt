@@ -1,6 +1,7 @@
 add_library(Render STATIC
         Renderer.cpp
         Scene.cpp
+        SceneAccelerationStructure.cpp
         Camera.cpp
         ObjectCullingPass.cpp
         OpaqueDirectLightingPass.cpp

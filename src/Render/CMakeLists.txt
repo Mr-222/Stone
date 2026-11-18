@@ -24,6 +24,7 @@ target_link_libraries(Render PUBLIC
 
 target_link_libraries(Render PRIVATE
         Utility
+        glfw
         fastgltf::fastgltf
         glm::glm
 )

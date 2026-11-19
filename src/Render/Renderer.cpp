@@ -1,5 +1,6 @@
 #include "Renderer.h"
 
+#include <array>
 #include <memory>
 #include <GLFW/glfw3.h>
 
@@ -70,33 +71,57 @@ void Renderer::Setup() {
         .color = glm::vec3(1.0f),
         .intensity = 0.1f,
     };
-    m_scene->pointLights = {
-        PointLight{
-            .position = glm::vec3(-6.0f, 2.0f, -4.0f),
-            .color = glm::vec3(1.0f, 0.8f, 0.55f),
-            .intensity = 15.0f,
-            .range = 10.0f,
-        },
-        PointLight{
-            .position = glm::vec3(6.0f, 2.0f, -4.0f),
-            .color = glm::vec3(1.0f, 0.8f, 0.55f),
-            .intensity = 15.0f,
-            .range = 10.0f,
-        },
-        PointLight{
-            .position = glm::vec3(-6.0f, 2.0f, 3.5f),
-            .color = glm::vec3(1.0f, 0.8f, 0.55f),
-            .intensity = 15.0f,
-            .range = 10.0f,
-        },
-        PointLight{
-            .position = glm::vec3(6.0f, 2.0f, 3.5f),
-            .color = glm::vec3(1.0f, 0.8f, 0.55f),
-            .intensity = 15.0f,
-            .range = 10.0f,
-        },
+    const std::array<glm::vec3, 6> lightPalette = {
+        glm::vec3(1.0f, 0.78f, 0.45f), // warm amber
+        glm::vec3(1.0f, 0.52f, 0.22f), // torch orange
+        glm::vec3(0.42f, 0.85f, 1.0f), // cyan
+        glm::vec3(0.45f, 0.95f, 0.62f), // emerald
+        glm::vec3(0.75f, 0.52f, 1.0f), // violet
+        glm::vec3(1.0f, 0.96f, 0.88f), // soft white
     };
-    m_scene->spotLights = {};
+    const std::array floorHeights = { 1.6f, 5.6f };
+    const std::array aisleZs = { -4.2f, -0.3f, 3.6f };
+    m_scene->pointLights.clear();
+    m_scene->pointLights.reserve(floorHeights.size() * 10 * aisleZs.size());
+    for (size_t floorIdx = 0; floorIdx < floorHeights.size(); ++floorIdx) {
+        for (size_t col = 0; col < 10; ++col) {
+            const float x = -10.5f + static_cast<float>(col) * (20.0f / 9.0f);
+            for (size_t aisleIdx = 0; aisleIdx < aisleZs.size(); ++aisleIdx) {
+                const size_t paletteIdx = (floorIdx * 7 + col * 3 + aisleIdx) % lightPalette.size();
+                m_scene->pointLights.push_back(PointLight{
+                    .position = glm::vec3(x, floorHeights[floorIdx], aisleZs[aisleIdx]),
+                    .color = lightPalette[paletteIdx],
+                    .intensity = 6.0f,
+                    .range = 3.8f,
+                });
+            }
+        }
+    }
+
+    const std::array spotHeights = { 2.8f, 6.8f };
+    const std::array spotXs = { -8.0f, -3.0f, 2.0f, 7.0f };
+    const std::array spotZs = { -3.2f, 2.5f };
+    m_scene->spotLights.clear();
+    m_scene->spotLights.reserve(spotHeights.size() * spotXs.size() * spotZs.size());
+    for (size_t floorIdx = 0; floorIdx < spotHeights.size(); ++floorIdx) {
+        for (size_t xIdx = 0; xIdx < spotXs.size(); ++xIdx) {
+            for (size_t zIdx = 0; zIdx < spotZs.size(); ++zIdx) {
+                const float z = spotZs[zIdx];
+                const glm::vec3 pos(spotXs[xIdx], spotHeights[floorIdx], z);
+                const glm::vec3 target(spotXs[xIdx], spotHeights[floorIdx] - 2.6f, -0.3f);
+                const size_t paletteIdx = (floorIdx * 3 + xIdx + zIdx * 2) % lightPalette.size();
+                m_scene->spotLights.push_back(SpotLight{
+                    .position = pos,
+                    .direction = glm::normalize(target - pos),
+                    .color = lightPalette[paletteIdx],
+                    .intensity = 20.0f,
+                    .range = 7.5f,
+                    .innerAngle = glm::radians(15.0f),
+                    .outerAngle = glm::radians(30.0f),
+                });
+            }
+        }
+    }
     m_scene->CommitToGPU(m_metalContext->GetDevice(), *m_commandBufferPool, m_metalContext->GetComputeCommandQueue());
     m_scene->RegisterBuffers(*m_renderGraph);
 
@@ -229,12 +254,22 @@ void Renderer::Run() {
         }
         m_renderGraph->RegisterFrameLocalTexture(kSceneColorImageName, frameSlot, *sceneColorTexture);
 
-        const glm::mat4 viewProj = m_camera->GetProjectionMatrix() * m_camera->GetViewMatrix();
+        const glm::mat4 view = m_camera->GetViewMatrix();
+        const glm::mat4 proj = m_camera->GetProjectionMatrix();
+        const glm::mat4 viewProj = proj * view;
+        const uint32_t width = static_cast<uint32_t>(backbufferTexture->width());
+        const uint32_t height = static_cast<uint32_t>(backbufferTexture->height());
+        const uint32_t tileCountX = (width + kLightTileSize - 1) / kLightTileSize;
+        const uint32_t tileCountY = (height + kLightTileSize - 1) / kLightTileSize;
+
         FrameUniform frameUniform = {
+            .view = view,
+            .proj = proj,
             .viewProjection = viewProj,
             .invViewProj = glm::inverse(viewProj),
             .cameraPosition = glm::vec4(m_camera->GetPosition(), 1.0f),
             .sunTransmittance = glm::vec4(1.0f),
+            .screenSizeAndTileCount = glm::uvec4(width, height, tileCountX, tileCountY),
         };
         m_frameUniforms[frameSlot]->Update(&frameUniform, sizeof(FrameUniform));
 

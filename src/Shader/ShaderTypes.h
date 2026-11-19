@@ -6,14 +6,40 @@
 using namespace metal;
 
 constant constexpr uint32_t kMaxBindlessTextureCount = 1024;
+constant constexpr uint32_t kLightTileSize = 16;
+constant constexpr uint32_t kMaxCulledLightsPerTile = 64;
 constant constexpr uint32_t kMaterialFlagAlphaMask = 1u << 0;
 constant constexpr uint32_t kMaterialFlagDoubleSided = 1u << 1;
 
 struct FrameUniform {
+    float4x4 view;
+    float4x4 proj;
     float4x4 viewProjection;
     float4x4 invViewProj;
     float4 cameraPosition;
     float4 sunTransmittance;
+    uint4 screenSizeAndTileCount; // xy = screen size in pixels, zw = light tile count
+};
+
+struct TileLightList {
+    uint16_t pointLightCount;
+    uint16_t spotLightCount;
+    uint16_t pointLightIndices[kMaxCulledLightsPerTile];
+    uint16_t spotLightIndices[kMaxCulledLightsPerTile];
+};
+
+// Tile-culling scratch must live in its own explicitly bound threadgroup slot: function-scope threadgroup
+// variables in a tile function alias the persistent [[threadgroup(0)]] TileLightList read by deferredLighting_fragment.
+struct TileCullingScratch {
+    atomic_uint minOpaqueZ;
+    atomic_uint maxOpaqueZ;
+    atomic_uint maxTransZ;
+    atomic_uint opaquePointCount;
+    atomic_uint opaqueSpotCount;
+    atomic_uint transPointCount;
+    atomic_uint transSpotCount;
+    uint16_t transPointIndices[kMaxCulledLightsPerTile];
+    uint16_t transSpotIndices[kMaxCulledLightsPerTile];
 };
 
 struct GPULightListInfo {
@@ -36,9 +62,9 @@ struct GPUPointLight {
 
 struct GPUSpotLight {
     float4 positionAndRange;     // xyz = world position, w = range
-    float4 direction;            // xyz = direction (normalized), w = unused
+    float4 direction;            // xyz = direction (normalized), w = culling sphere center offset along direction
     float4 colorAndIntensity;    // rgb = color, w = luminous intensity (candela)
-    float4 scaleOffset;          // x = angleScale, y = angleOffset, zw = unused
+    float4 scaleOffset;          // x = angleScale, y = angleOffset, z = culling sphere radius, w = unused
 };
 
 struct GPUSubMesh {
@@ -79,14 +105,38 @@ struct AtmosphereUniforms {
 #include <glm/glm.hpp>
 
 constexpr uint32_t kMaxBindlessTextureCount = 1024;
+constexpr uint32_t kLightTileSize = 16;
+constexpr uint32_t kMaxCulledLightsPerTile = 64;
 constexpr uint32_t kMaterialFlagAlphaMask = 1u << 0;
 constexpr uint32_t kMaterialFlagDoubleSided = 1u << 1;
 
 struct FrameUniform {
+    glm::mat4 view;
+    glm::mat4 proj;
     glm::mat4 viewProjection;
     glm::mat4 invViewProj;
     glm::vec4 cameraPosition;
     glm::vec4 sunTransmittance;
+    glm::uvec4 screenSizeAndTileCount; // xy = screen size in pixels, zw = light tile count
+};
+
+struct TileLightList {
+    uint16_t pointLightCount;
+    uint16_t spotLightCount;
+    uint16_t pointLightIndices[kMaxCulledLightsPerTile];
+    uint16_t spotLightIndices[kMaxCulledLightsPerTile];
+};
+
+struct TileCullingScratch {
+    uint32_t minOpaqueZ;
+    uint32_t maxOpaqueZ;
+    uint32_t maxTransZ;
+    uint32_t opaquePointCount;
+    uint32_t opaqueSpotCount;
+    uint32_t transPointCount;
+    uint32_t transSpotCount;
+    uint16_t transPointIndices[kMaxCulledLightsPerTile];
+    uint16_t transSpotIndices[kMaxCulledLightsPerTile];
 };
 
 struct GPULightListInfo {
@@ -109,9 +159,9 @@ struct GPUPointLight {
 
 struct GPUSpotLight {
     glm::vec4 positionAndRange;     // xyz = world position, w = range
-    glm::vec4 direction;            // xyz = direction (normalized), w = unused
+    glm::vec4 direction;            // xyz = direction (normalized), w = culling sphere center offset along direction
     glm::vec4 colorAndIntensity;    // rgb = color, w = luminous intensity (candela)
-    glm::vec4 scaleOffset;          // x = angleScale, y = angleOffset, zw = unused
+    glm::vec4 scaleOffset;          // x = angleScale, y = angleOffset, z = culling sphere radius, w = unused
 };
 
 struct GPUSubMesh {
@@ -148,7 +198,9 @@ struct AtmosphereUniforms {
     glm::vec3 groundAlbedo;
 };
 
-static_assert(sizeof(FrameUniform) == 160);
+static_assert(sizeof(FrameUniform) == 304);
+static_assert(sizeof(TileLightList) == 260);
+static_assert(sizeof(TileCullingScratch) == 284);
 static_assert(sizeof(GPULightListInfo) == 32);
 static_assert(sizeof(GPUDirectionalLight) == 32);
 static_assert(sizeof(GPUPointLight) == 32);
@@ -224,6 +276,7 @@ enum class OpaqueDirectLightingBufferIndex {
     VertexArguments,
     FrameUniform,
     FragmentArguments,
+    TransparentTileLightLists,
     MaxBufferBindCount,
 };
 
@@ -251,6 +304,7 @@ enum class TransparentDirectLightingBufferIndex {
     VertexArguments,
     FrameUniform,
     FragmentArguments,
+    TransparentTileLightLists,
     MaxBufferBindCount,
 };
 

@@ -23,3 +23,39 @@ inline float SpotAngleAttenuation(float3 l, float3 spotDirection, float angleSca
     const float attenuation = saturate(cd * angleScale + angleOffset);
     return attenuation * attenuation;
 }
+
+struct TileFrustumPlanes {
+    float3 left;
+    float3 right;
+    float3 bottom;
+    float3 top;
+};
+
+inline TileFrustumPlanes ComputeTileFrustumPlanes(uint2 tileCoord, uint2 screenSize, uint tileSize, float4x4 proj) {
+    const float2 minPx = float2(tileCoord * tileSize);
+    const float2 maxPx = min(float2((tileCoord + 1u) * tileSize), float2(screenSize));
+    const float xLeft = minPx.x / float(screenSize.x) * 2.0f - 1.0f;
+    const float xRight = maxPx.x / float(screenSize.x) * 2.0f - 1.0f;
+    const float yTop = 1.0f - (minPx.y / float(screenSize.y)) * 2.0f;
+    const float yBottom = 1.0f - (maxPx.y / float(screenSize.y)) * 2.0f;
+    const float p00 = proj[0][0];
+    const float p11 = proj[1][1];
+
+    TileFrustumPlanes planes;
+    planes.left = normalize(float3(p00, 0.0f, -xLeft));
+    planes.right = normalize(float3(-p00, 0.0f, xRight));
+    planes.bottom = normalize(float3(0.0f, p11, -yBottom));
+    planes.top = normalize(float3(0.0f, -p11, yTop));
+    return planes;
+}
+
+inline bool SphereIntersectsTileFrustumXY(float3 viewCenter, float radius, TileFrustumPlanes planes) {
+    return dot(planes.left, viewCenter) >= -radius &&
+           dot(planes.right, viewCenter) >= -radius &&
+           dot(planes.bottom, viewCenter) >= -radius &&
+           dot(planes.top, viewCenter) >= -radius;
+}
+
+inline bool SphereIntersectsDepthRange(float viewZ, float radius, float minViewZ, float maxViewZ) {
+    return viewZ + radius >= minViewZ && viewZ - radius <= maxViewZ;
+}

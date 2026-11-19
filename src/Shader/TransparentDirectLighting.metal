@@ -56,7 +56,8 @@ fragment TransparentFragmentOut transparentDirect_fragment(
     TransparentVertexOut in [[stage_in]],
     bool frontFacing [[front_facing]],
     constant FrameUniform& frame [[buffer(TransparentDirectLightingBufferIndex::FrameUniform)]],
-    device TransparentDirectLightingFragmentArguments& args [[buffer(TransparentDirectLightingBufferIndex::FragmentArguments)]])
+    device TransparentDirectLightingFragmentArguments& args [[buffer(TransparentDirectLightingBufferIndex::FragmentArguments)]],
+    const device TileLightList* transparentTileLightLists [[buffer(TransparentDirectLightingBufferIndex::TransparentTileLightLists)]])
 {
     constexpr sampler textureSampler(
         coord::normalized,
@@ -106,7 +107,12 @@ fragment TransparentFragmentOut transparentDirect_fragment(
         luminance += brdf * lightColor * (lightIlluminance * NoL);
     }
 
-    for (uint lightIndex = 0; lightIndex < lightListInfo.pointLightCount; ++lightIndex) {
+    const uint2 tileCoord = min(uint2(in.position.xy) / kLightTileSize, frame.screenSizeAndTileCount.zw - 1u);
+    const uint tileIndex = tileCoord.y * frame.screenSizeAndTileCount.z + tileCoord.x;
+    const device TileLightList& tileLights = transparentTileLightLists[tileIndex];
+
+    for (uint i = 0; i < tileLights.pointLightCount; ++i) {
+        const uint lightIndex = tileLights.pointLightIndices[i];
         const device GPUPointLight& light = args.pointLights[lightIndex];
         const float3 posToLight = light.positionAndRange.xyz - in.worldPosition;
         const float distSq = dot(posToLight, posToLight);
@@ -127,7 +133,8 @@ fragment TransparentFragmentOut transparentDirect_fragment(
         luminance += brdf * lightColor * (lightIntensity * attenuation * NoL);
     }
 
-    for (uint lightIndex = 0; lightIndex < lightListInfo.spotLightCount; ++lightIndex) {
+    for (uint i = 0; i < tileLights.spotLightCount; ++i) {
+        const uint lightIndex = tileLights.spotLightIndices[i];
         const device GPUSpotLight& light = args.spotLights[lightIndex];
         const float3 posToLight = light.positionAndRange.xyz - in.worldPosition;
         const float distSq = dot(posToLight, posToLight);

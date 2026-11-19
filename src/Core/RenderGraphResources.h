@@ -12,10 +12,11 @@
 #include "Buffer.h"
 #include "IndirectCommandBuffer.h"
 
-constexpr std::string kSwapchainImageName = "swapchain_image";
-constexpr std::string kSceneDepthImageName = "scene_depth";
-constexpr std::string kSceneColorImageName = "scene_color";
-constexpr std::string kBloomImageName = "bloom_image";
+constexpr const char* kSwapchainImageName = "swapchain_image";
+constexpr const char* kSceneDepthImageName = "scene_depth";
+constexpr const char* kSceneColorImageName = "scene_color";
+constexpr const char* kTransparentTileLightListBufferName = "transparent_tile_light_list";
+constexpr const char* kBloomImageName = "bloom_image";
 
 enum class RenderGraphResourceType {
     Texture,

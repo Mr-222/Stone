@@ -51,6 +51,7 @@ struct TransparentDirectLightingPassData {
     RenderGraphResourceHandle directionalLightBufferHandle;
     RenderGraphResourceHandle pointLightBufferHandle;
     RenderGraphResourceHandle spotLightBufferHandle;
+    RenderGraphResourceHandle transparentTileLightListBufferHandle;
     RenderGraphResourceHandle transparentIndirectCBHandle;
     std::vector<MTL::Texture*> textures;
     MTL::ResidencySet* accelResidencySet = nullptr;
@@ -196,6 +197,7 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
     RenderGraphResourceHandle directionalLightBufferHandle = graph.DeclareBuffer("DirectionalLightBuffer");
     RenderGraphResourceHandle pointLightBufferHandle = graph.DeclareBuffer("PointLightBuffer");
     RenderGraphResourceHandle spotLightBufferHandle = graph.DeclareBuffer("SpotLightBuffer");
+    RenderGraphResourceHandle transparentTileLightListBufferHandle = graph.DeclareBuffer(kTransparentTileLightListBufferName);
     RenderGraphResourceHandle transparentIndirectCBHandle = graph.DeclareIndirectCommandBuffer("TransparentIndirectCommandBuffer");
 
     graph.AddPass<TransparentDirectLightingPassData>(
@@ -234,6 +236,7 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             data.directionalLightBufferHandle = directionalLightBufferHandle;
             data.pointLightBufferHandle = pointLightBufferHandle;
             data.spotLightBufferHandle = spotLightBufferHandle;
+            data.transparentTileLightListBufferHandle = transparentTileLightListBufferHandle;
             data.transparentIndirectCBHandle = transparentIndirectCBHandle;
             data.textures = m_textures;
             data.accelResidencySet = m_accelResidencySet;
@@ -251,6 +254,7 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             builder.ReadBuffer(directionalLightBufferHandle);
             builder.ReadBuffer(pointLightBufferHandle);
             builder.ReadBuffer(spotLightBufferHandle);
+            builder.ReadBuffer(transparentTileLightListBufferHandle);
             builder.ReadIndirectCommandBuffer(transparentIndirectCBHandle);
 
             MTL::Buffer* transparentVertexBuffer = resources.GetBuffer(transparentVertexBufferHandle);
@@ -308,6 +312,7 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             MTL::Buffer* directionalLightBuffer = resources.GetBuffer(data.directionalLightBufferHandle);
             MTL::Buffer* pointLightBuffer = resources.GetBuffer(data.pointLightBufferHandle);
             MTL::Buffer* spotLightBuffer = resources.GetBuffer(data.spotLightBufferHandle);
+            MTL::Buffer* transparentTileLightListBuffer = resources.GetBuffer(data.transparentTileLightListBufferHandle);
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.transparentIndirectCBHandle);
 
             LOG_ERROR_IF(!frameUniformBuffer, "TransparentDirectLighting: Failed to get frame uniform buffer");
@@ -322,9 +327,11 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             LOG_ERROR_IF(!directionalLightBuffer, "TransparentDirectLighting: Failed to get directional light buffer");
             LOG_ERROR_IF(!pointLightBuffer, "TransparentDirectLighting: Failed to get point light buffer");
             LOG_ERROR_IF(!spotLightBuffer, "TransparentDirectLighting: Failed to get spot light buffer");
+            LOG_ERROR_IF(!transparentTileLightListBuffer, "TransparentDirectLighting: Failed to get transparent tile light list buffer");
             LOG_ERROR_IF(!indirectCB, "TransparentDirectLighting: Failed to get indirect command buffer");
 
             data.argumentTable->setAddress(frameUniformBuffer->gpuAddress(), static_cast<NS::UInteger>(TransparentDirectLightingBufferIndex::FrameUniform));
+            data.argumentTable->setAddress(transparentTileLightListBuffer->gpuAddress(), static_cast<NS::UInteger>(TransparentDirectLightingBufferIndex::TransparentTileLightLists));
 
             cmd.AddResource(frameUniformBuffer);
             cmd.AddResource(transparentVertexBuffer);
@@ -338,6 +345,7 @@ void TransparentDirectLightingPass::AddToGraph(RenderGraph& graph) {
             cmd.AddResource(directionalLightBuffer);
             cmd.AddResource(pointLightBuffer);
             cmd.AddResource(spotLightBuffer);
+            cmd.AddResource(transparentTileLightListBuffer);
             cmd.AddResource(indirectCB);
             cmd.AddResource(data.vertexArgumentBuffer);
             cmd.AddResource(data.fragmentArgumentBuffer);

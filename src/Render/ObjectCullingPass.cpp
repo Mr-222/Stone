@@ -12,11 +12,10 @@
 constexpr const char* kObjetcCullingShaderLibrary = STONE_SHADER_DIR "/ObjectCulling.metallib";
 
 struct ObjectCullingPassData {
+    RenderGraphResourceHandle frameUniformHandle;
     RenderGraphResourceHandle opaqueIndexBufferHandle;
     RenderGraphResourceHandle opaqueIndexBufferInfoBufferHandle;
     RenderGraphResourceHandle opaqueRenderPrimitivesBufferHandle;
-    RenderGraphResourceHandle visibilityBufferHandle;
-    RenderGraphResourceHandle executionRangeBufferHandle;
     RenderGraphResourceHandle icbArgumentBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
 };
@@ -32,12 +31,12 @@ ObjectCullingPass::~ObjectCullingPass() = default;
 
 void ObjectCullingPass::Setup(MetalContext& context, const int numPrimitives, const int maskedPrimitiveStart) {
     m_numPrimitives = numPrimitives;
+    m_maskedPrimitiveStart = maskedPrimitiveStart;
 
     MTL::Device* device = context.GetDevice();
 
     const ObjectCullingParams cullingParams {
         .primitiveCount = static_cast<uint32_t>(numPrimitives),
-        .maskedPrimitiveStart = static_cast<uint32_t>(maskedPrimitiveStart),
     };
     m_cullingParamsBuffer = std::make_unique<Buffer>(
         device,
@@ -80,18 +79,6 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numPrimitives, co
     for (size_t frameSlot = 0; frameSlot < m_frameResources.size(); ++frameSlot) {
         FrameResources& resources = m_frameResources[frameSlot];
 
-        resources.visibilityBuffer = std::make_unique<Buffer>(
-            device,
-            numPrimitives * sizeof(Visibility),
-            MTL::ResourceStorageModePrivate);
-        resources.visibilityBuffer->GetNative()->setLabel(MakeFrameResourceLabel("Visibility Buffer", frameSlot));
-
-        resources.executionRangeBuffer = std::make_unique<Buffer>(
-            device,
-            2 * sizeof(IndirectCommandBufferExecutionRange),
-            MTL::ResourceStorageModePrivate);
-        resources.executionRangeBuffer->GetNative()->setLabel(MakeFrameResourceLabel("Execution Range Buffer", frameSlot));
-
         resources.indirectCB = std::make_unique<IndirectCommandBuffer>(
             device,
             icbDescriptor,
@@ -123,22 +110,17 @@ void ObjectCullingPass::Setup(MetalContext& context, const int numPrimitives, co
 }
 
 void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
-    RenderGraphResourceHandle visibilitiesBufferHandle;
-    RenderGraphResourceHandle executionRangeBufferHandle;
     RenderGraphResourceHandle icbArgumentBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
     for (uint32_t frameSlot = 0; frameSlot < m_frameResources.size(); ++frameSlot) {
         const FrameResources& resources = m_frameResources[frameSlot];
-        visibilitiesBufferHandle = graph.RegisterFrameLocalBuffer(
-            "VisibilityBuffer", frameSlot, *resources.visibilityBuffer);
-        executionRangeBufferHandle = graph.RegisterFrameLocalBuffer(
-            "ExecutionRangeBuffer", frameSlot, *resources.executionRangeBuffer);
         icbArgumentBufferHandle = graph.RegisterFrameLocalBuffer(
             "ObjectCullingICBArgumentBuffer", frameSlot, *resources.icbArgumentBuffer);
         indirectCBHandle = graph.RegisterFrameLocalIndirectCommandBuffer(
             "IndirectCommandBuffer", frameSlot, *resources.indirectCB);
     }
 
+    RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
     RenderGraphResourceHandle opaqueIndexBufferHandle = graph.DeclareBuffer("OpaqueIndexBuffer");
     RenderGraphResourceHandle opaqueIndexBufferInfoBufferHandle = graph.DeclareBuffer("OpaqueIndexBufferInfoBuffer");
     RenderGraphResourceHandle opaqueRenderPrimitivesBufferHandle = graph.DeclareBuffer("OpaqueRenderPrimitiveBuffer");
@@ -147,41 +129,35 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
         "ObjectCulling",
         IsCompute,
         [=](RenderGraphBuilder& builder, ObjectCullingPassData& data, RenderGraphResources&) {
+            data.frameUniformHandle = frameUniformHandle;
             data.opaqueIndexBufferHandle = opaqueIndexBufferHandle;
             data.opaqueIndexBufferInfoBufferHandle = opaqueIndexBufferInfoBufferHandle;
             data.opaqueRenderPrimitivesBufferHandle = opaqueRenderPrimitivesBufferHandle;
-            data.visibilityBufferHandle = visibilitiesBufferHandle;
-            data.executionRangeBufferHandle = executionRangeBufferHandle;
             data.icbArgumentBufferHandle = icbArgumentBufferHandle;
             data.indirectCBHandle = indirectCBHandle;
 
+            builder.ReadBuffer(data.frameUniformHandle);
             builder.ReadBuffer(data.opaqueIndexBufferHandle);
             builder.ReadBuffer(data.opaqueIndexBufferInfoBufferHandle);
             builder.ReadBuffer(data.opaqueRenderPrimitivesBufferHandle);
             builder.ReadBuffer(data.icbArgumentBufferHandle);
-            builder.WriteBuffer(data.visibilityBufferHandle);
-            builder.WriteBuffer(data.executionRangeBufferHandle);
             builder.WriteIndirectCommandBuffer(data.indirectCBHandle);
         },
         [this](const ObjectCullingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
+            MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
+            LOG_ERROR_IF(!frameUniformBuffer, "Failed to get frame uniform buffer");
             MTL::Buffer* opaqueIndexBuffer = resources.GetBuffer(data.opaqueIndexBufferHandle);
             LOG_ERROR_IF(!opaqueIndexBuffer, "Failed to get opaque index buffer");
             MTL::Buffer* opaqueIndexBufferInfoBuffer = resources.GetBuffer(data.opaqueIndexBufferInfoBufferHandle);
             LOG_ERROR_IF(!opaqueIndexBufferInfoBuffer, "Failed to get opaque index buffer info");
             MTL::Buffer* opaqueRenderPrimitivesBuffer = resources.GetBuffer(data.opaqueRenderPrimitivesBufferHandle);
             LOG_ERROR_IF(!opaqueRenderPrimitivesBuffer, "Failed to get opaque render primitives buffer");
-            MTL::Buffer* visibilityBuffer = resources.GetBuffer(data.visibilityBufferHandle);
-            LOG_ERROR_IF(!visibilityBuffer, "Failed to get visibility buffer");
-            MTL::Buffer* executionRangeBuffer = resources.GetBuffer(data.executionRangeBufferHandle);
-            LOG_ERROR_IF(!executionRangeBuffer, "Failed to get ICB execution range buffer");
             MTL::Buffer* icbArgumentBuffer = resources.GetBuffer(data.icbArgumentBufferHandle);
             LOG_ERROR_IF(!icbArgumentBuffer, "Failed to get ICB argument buffer");
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
             LOG_ERROR_IF(!indirectCB, "Failed to get indirect command buffer");
 
-            m_argumentTable->setAddress(
-                executionRangeBuffer->gpuAddress(),
-                static_cast<NS::UInteger>(ObjectCullingBufferIndex::ExecutionRange));
+            m_argumentTable->setAddress(frameUniformBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::FrameUniform));
             m_argumentTable->setAddress(
                 opaqueIndexBufferInfoBuffer->gpuAddress(),
                 static_cast<NS::UInteger>(ObjectCullingBufferIndex::IndexBufferInfo));
@@ -189,17 +165,13 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
                 opaqueRenderPrimitivesBuffer->gpuAddress(),
                 static_cast<NS::UInteger>(ObjectCullingBufferIndex::RenderPrimitives));
             m_argumentTable->setAddress(
-                visibilityBuffer->gpuAddress(),
-                static_cast<NS::UInteger>(ObjectCullingBufferIndex::Visibilities));
-            m_argumentTable->setAddress(
                 icbArgumentBuffer->gpuAddress(),
                 static_cast<NS::UInteger>(ObjectCullingBufferIndex::ICBContainer));
 
+            cmd.AddResource(frameUniformBuffer);
             cmd.AddResource(opaqueIndexBuffer);
             cmd.AddResource(opaqueIndexBufferInfoBuffer);
             cmd.AddResource(opaqueRenderPrimitivesBuffer);
-            cmd.AddResource(executionRangeBuffer);
-            cmd.AddResource(visibilityBuffer);
             cmd.AddResource(m_cullingParamsBuffer->GetNative());
             cmd.AddResource(indirectCB);
             cmd.AddResource(icbArgumentBuffer);
@@ -207,8 +179,6 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
             MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
             LOG_ERROR_IF(!computeEncoder, "Failed to create compute command encoder");
 
-            computeEncoder->fillBuffer(visibilityBuffer, NS::Range(0, visibilityBuffer->length()), 0);
-            computeEncoder->fillBuffer(executionRangeBuffer, NS::Range(0, executionRangeBuffer->length()), 0);
             computeEncoder->resetCommandsInBuffer(indirectCB, NS::Range(0, m_numPrimitives));
 
             computeEncoder->barrierAfterEncoderStages(MTL::StageBlit, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
@@ -222,7 +192,11 @@ void ObjectCullingPass::AddToGraph(RenderGraph& graph) {
 
             computeEncoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageBlit, MTL4::VisibilityOptionDevice);
 
-            computeEncoder->optimizeIndirectCommandBuffer(indirectCB, NS::Range(0, m_numPrimitives));
+            // An optimized range may only be executed as a whole, and the G-buffer pass executes the opaque and masked ranges separately, so optimize each range on its own.
+            if (m_maskedPrimitiveStart > 0)
+                computeEncoder->optimizeIndirectCommandBuffer(indirectCB, NS::Range(0, m_maskedPrimitiveStart));
+            if (m_numPrimitives > m_maskedPrimitiveStart)
+                computeEncoder->optimizeIndirectCommandBuffer(indirectCB, NS::Range(m_maskedPrimitiveStart, m_numPrimitives - m_maskedPrimitiveStart));
             computeEncoder->endEncoding();
         });
 }

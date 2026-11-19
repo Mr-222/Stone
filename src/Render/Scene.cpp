@@ -19,6 +19,26 @@
 #include "Utility/Logger.h"
 #include "GeometryGenerator.h"
 
+// Writes the world-space AABB of the vertices referenced by the submesh's indices into the primitive's bounds.
+static void ComputeWorldBounds(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, const SubMesh& submesh, const glm::mat4& transform, GPURenderPrimitive& entry) {
+    glm::vec3 minPosition(std::numeric_limits<float>::max());
+    glm::vec3 maxPosition(std::numeric_limits<float>::lowest());
+    for (uint32_t i = submesh.firstIndex; i < submesh.firstIndex + submesh.indexCount; ++i) {
+        const glm::vec3& position = vertices[submesh.vertexOffset + indices[i]].position;
+        minPosition = glm::min(minPosition, position);
+        maxPosition = glm::max(maxPosition, position);
+    }
+    if (submesh.indexCount == 0)
+        minPosition = maxPosition = glm::vec3(0.0f);
+
+    // Transforming the center and taking |M| * extents gives the tightest world AABB enclosing the transformed local AABB.
+    const glm::vec3 localCenter = 0.5f * (minPosition + maxPosition);
+    const glm::vec3 localExtents = 0.5f * (maxPosition - minPosition);
+    const glm::mat3 absLinear(glm::abs(glm::vec3(transform[0])), glm::abs(glm::vec3(transform[1])), glm::abs(glm::vec3(transform[2])));
+    entry.boundsCenter = glm::vec4(glm::vec3(transform * glm::vec4(localCenter, 1.0f)), 0.0f);
+    entry.boundsExtents = glm::vec4(absLinear * localExtents, 0.0f);
+}
+
 std::vector<std::byte> ReadFileBytes(const fastgltf::sources::URI& source) {
     const bool isLocalPath = source.uri.isLocalPath();
     LOG_ERROR_IF(!isLocalPath, "Only local glTF image URIs are supported.");
@@ -526,6 +546,7 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
         entry.firstIndex = submesh.firstIndex;
         entry.indexCount = submesh.indexCount;
         entry.materialIndex = submesh.materialIndex;
+        ComputeWorldBounds(opaqueVertices, opaqueIndices, submesh, renderObject.transform, entry);
         opaquePrimitiveEntries.push_back(entry);
     }
     const size_t opaquePrimitiveBufferSize = std::max(opaquePrimitiveEntries.size() * sizeof(GPURenderPrimitive), sizeof(GPURenderPrimitive));
@@ -571,6 +592,7 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
         entry.firstIndex = submesh.firstIndex;
         entry.indexCount = submesh.indexCount;
         entry.materialIndex = submesh.materialIndex;
+        ComputeWorldBounds(transparentVertices, transparentIndices, submesh, renderObject.transform, entry);
         transparentPrimitiveEntries.push_back(entry);
     }
     const size_t transparentPrimitiveBufferSize = std::max(transparentPrimitiveEntries.size() * sizeof(GPURenderPrimitive), sizeof(GPURenderPrimitive));

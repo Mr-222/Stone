@@ -81,6 +81,8 @@ struct GPURenderPrimitive {
     uint32_t materialIndex;
     float4x4 worldMat;
     float4x4 worldNormalMat;
+    float4 boundsCenter;  // xyz = world-space AABB center
+    float4 boundsExtents; // xyz = world-space AABB half extents
 };
 
 struct GPUMaterial {
@@ -178,6 +180,8 @@ struct GPURenderPrimitive {
     uint32_t materialIndex;
     glm::mat4 worldMat;
     glm::mat4 worldNormalMat;
+    glm::vec4 boundsCenter;  // xyz = world-space AABB center
+    glm::vec4 boundsExtents; // xyz = world-space AABB half extents
 };
 
 struct GPUMaterial {
@@ -206,19 +210,10 @@ static_assert(sizeof(GPUDirectionalLight) == 32);
 static_assert(sizeof(GPUPointLight) == 32);
 static_assert(sizeof(GPUSpotLight) == 64);
 static_assert(sizeof(GPUSubMesh) == 16);
-static_assert(sizeof(GPURenderPrimitive) == 144);
+static_assert(sizeof(GPURenderPrimitive) == 176);
 static_assert(sizeof(GPUMaterial) == 48);
 static_assert(sizeof(AtmosphereUniforms) == 28);
 #endif
-
-struct IndirectCommandBufferExecutionRange {
-    uint32_t location;
-#ifdef __METAL_VERSION__
-    atomic_uint length;
-#else
-    uint32_t length;
-#endif
-};
 
 // FFT bloom layout: the scene is stored in the top-left kFFTBloomContentSize^2 region of the kFFTBloomSize^2 FFT buffer,
 // the rest is zero padding. The PSF support must stay within kFFTBloomKernelRadius so that circular convolution never wraps.
@@ -234,23 +229,17 @@ constexpr uint32_t kFFTBloomContentSize = kFFTBloomSize - kFFTBloomKernelRadius;
 
 struct ObjectCullingParams {
     uint32_t primitiveCount;
-    uint32_t maskedPrimitiveStart;
 };
 
 struct IndexBufferInfo {
     uint64_t addr;
 };
 
-struct Visibility {
-    uint32_t primitiveID;
-};
-
 enum class ObjectCullingBufferIndex {
-    ExecutionRange,
+    FrameUniform,
     CullingParams,
     IndexBufferInfo,
     RenderPrimitives,
-    Visibilities,
     ICBContainer,
     MaxBufferBindCount,
 };

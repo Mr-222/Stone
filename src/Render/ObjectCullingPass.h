@@ -27,8 +27,6 @@ public:
 private:
     struct FrameResources {
         std::unique_ptr<IndirectCommandBuffer> indirectCB;
-        std::unique_ptr<Buffer> visibilityBuffer;
-        std::unique_ptr<Buffer> executionRangeBuffer;
         std::unique_ptr<Buffer> icbArgumentBuffer;
     };
 
@@ -39,4 +37,5 @@ private:
     std::vector<FrameResources> m_frameResources;
 
     int m_numPrimitives;
+    int m_maskedPrimitiveStart;
 };

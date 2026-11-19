@@ -653,11 +653,16 @@ void Scene::CommitToGPU(MTL::Device* device, CommandBufferPool& commandBufferPoo
         const float cosOuter = std::cos(light.outerAngle);
         const float angleScale = 1.0f / std::max(cosInner - cosOuter, 1e-5f);
         const float angleOffset = -cosOuter * angleScale;
+        // Smallest sphere enclosing the lit spherical sector (radius = range, half-angle = outer angle, capped at 90 degrees), used for tile light culling.
+        const float cosBound = std::max(cosOuter, 0.0f);
+        const bool narrowCone = cosBound >= 0.70710678f; // outer angle <= 45 degrees: sphere passes through apex and cone rim
+        const float boundCenterOffset = narrowCone ? light.range / (2.0f * cosBound) : light.range * cosBound;
+        const float boundRadius = narrowCone ? boundCenterOffset : light.range * std::sqrt(1.0f - cosBound * cosBound);
         spotLightEntries.push_back(GPUSpotLight{
             .positionAndRange = glm::vec4(light.position, light.range),
-            .direction = glm::vec4(glm::normalize(light.direction), 0.0f),
+            .direction = glm::vec4(glm::normalize(light.direction), boundCenterOffset),
             .colorAndIntensity = glm::vec4(light.color, light.intensity),
-            .scaleOffset = glm::vec4(angleScale, angleOffset, 0.0f, 0.0f),
+            .scaleOffset = glm::vec4(angleScale, angleOffset, boundRadius, 0.0f),
         });
     }
     if (spotLightEntries.empty())

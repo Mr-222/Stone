@@ -14,11 +14,10 @@
 constexpr const char* kTransparentObjectCullingShaderLibrary = STONE_SHADER_DIR "/ObjectCulling.metallib";
 
 struct TransparentObjectCullingPassData {
+    RenderGraphResourceHandle frameUniformHandle;
     RenderGraphResourceHandle transparentIndexBufferHandle;
     RenderGraphResourceHandle transparentIndexBufferInfoHandle;
     RenderGraphResourceHandle transparentRenderPrimitivesHandle;
-    RenderGraphResourceHandle visibilityBufferHandle;
-    RenderGraphResourceHandle executionRangeBufferHandle;
     RenderGraphResourceHandle icbArgumentBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
 };
@@ -38,7 +37,6 @@ void TransparentObjectCullingPass::Setup(MetalContext& context, const int numPri
 
     const ObjectCullingParams cullingParams {
         .primitiveCount = static_cast<uint32_t>(numPrimitives),
-        .maskedPrimitiveStart = static_cast<uint32_t>(numPrimitives),
     };
     m_cullingParamsBuffer = std::make_unique<Buffer>(device, &cullingParams, sizeof(cullingParams), MTL::ResourceStorageModeShared);
     m_cullingParamsBuffer->GetNative()->setLabel(NS::String::string("Transparent Culling Params Buffer", NS::UTF8StringEncoding));
@@ -73,12 +71,6 @@ void TransparentObjectCullingPass::Setup(MetalContext& context, const int numPri
     for (size_t frameSlot = 0; frameSlot < m_frameResources.size(); ++frameSlot) {
         FrameResources& resources = m_frameResources[frameSlot];
 
-        resources.visibilityBuffer = std::make_unique<Buffer>(device, effectiveCount * sizeof(Visibility), MTL::ResourceStorageModePrivate);
-        resources.visibilityBuffer->GetNative()->setLabel(MakeTransparentFrameLabel("Transparent Visibility Buffer", frameSlot));
-
-        resources.executionRangeBuffer = std::make_unique<Buffer>(device, sizeof(IndirectCommandBufferExecutionRange), MTL::ResourceStorageModePrivate);
-        resources.executionRangeBuffer->GetNative()->setLabel(MakeTransparentFrameLabel("Transparent Execution Range Buffer", frameSlot));
-
         resources.indirectCB = std::make_unique<IndirectCommandBuffer>(device, icbDescriptor, effectiveCount, MTL::ResourceStorageModePrivate);
         resources.indirectCB->GetNative()->setLabel(MakeTransparentFrameLabel("Transparent Scene ICB", frameSlot));
 
@@ -103,18 +95,15 @@ void TransparentObjectCullingPass::Setup(MetalContext& context, const int numPri
 }
 
 void TransparentObjectCullingPass::AddToGraph(RenderGraph& graph) {
-    RenderGraphResourceHandle visibilityBufferHandle;
-    RenderGraphResourceHandle executionRangeBufferHandle;
     RenderGraphResourceHandle icbArgumentBufferHandle;
     RenderGraphResourceHandle indirectCBHandle;
     for (uint32_t frameSlot = 0; frameSlot < m_frameResources.size(); ++frameSlot) {
         const FrameResources& resources = m_frameResources[frameSlot];
-        visibilityBufferHandle = graph.RegisterFrameLocalBuffer("TransparentVisibilityBuffer", frameSlot, *resources.visibilityBuffer);
-        executionRangeBufferHandle = graph.RegisterFrameLocalBuffer("TransparentExecutionRangeBuffer", frameSlot, *resources.executionRangeBuffer);
         icbArgumentBufferHandle = graph.RegisterFrameLocalBuffer("TransparentICBArgumentBuffer", frameSlot, *resources.icbArgumentBuffer);
         indirectCBHandle = graph.RegisterFrameLocalIndirectCommandBuffer("TransparentIndirectCommandBuffer", frameSlot, *resources.indirectCB);
     }
 
+    RenderGraphResourceHandle frameUniformHandle = graph.DeclareBuffer("frameUniform");
     RenderGraphResourceHandle transparentIndexBufferHandle = graph.DeclareBuffer("TransparentIndexBuffer");
     RenderGraphResourceHandle transparentIndexBufferInfoHandle = graph.DeclareBuffer("TransparentIndexBufferInfoBuffer");
     RenderGraphResourceHandle transparentRenderPrimitivesHandle = graph.DeclareBuffer("TransparentRenderPrimitiveBuffer");
@@ -123,20 +112,18 @@ void TransparentObjectCullingPass::AddToGraph(RenderGraph& graph) {
         "TransparentObjectCulling",
         IsCompute,
         [=](RenderGraphBuilder& builder, TransparentObjectCullingPassData& data, RenderGraphResources&) {
+            data.frameUniformHandle = frameUniformHandle;
             data.transparentIndexBufferHandle = transparentIndexBufferHandle;
             data.transparentIndexBufferInfoHandle = transparentIndexBufferInfoHandle;
             data.transparentRenderPrimitivesHandle = transparentRenderPrimitivesHandle;
-            data.visibilityBufferHandle = visibilityBufferHandle;
-            data.executionRangeBufferHandle = executionRangeBufferHandle;
             data.icbArgumentBufferHandle = icbArgumentBufferHandle;
             data.indirectCBHandle = indirectCBHandle;
 
+            builder.ReadBuffer(data.frameUniformHandle);
             builder.ReadBuffer(data.transparentIndexBufferHandle);
             builder.ReadBuffer(data.transparentIndexBufferInfoHandle);
             builder.ReadBuffer(data.transparentRenderPrimitivesHandle);
             builder.ReadBuffer(data.icbArgumentBufferHandle);
-            builder.WriteBuffer(data.visibilityBufferHandle);
-            builder.WriteBuffer(data.executionRangeBufferHandle);
             builder.WriteIndirectCommandBuffer(data.indirectCBHandle);
         },
         [this](const TransparentObjectCullingPassData& data, RenderGraphResources& resources, CommandBuffer& cmd) {
@@ -147,33 +134,29 @@ void TransparentObjectCullingPass::AddToGraph(RenderGraph& graph) {
                 return;
             }
 
+            MTL::Buffer* frameUniformBuffer = resources.GetBuffer(data.frameUniformHandle);
             MTL::Buffer* transparentIndexBuffer = resources.GetBuffer(data.transparentIndexBufferHandle);
             MTL::Buffer* transparentIndexBufferInfo = resources.GetBuffer(data.transparentIndexBufferInfoHandle);
             MTL::Buffer* transparentRenderPrimitives = resources.GetBuffer(data.transparentRenderPrimitivesHandle);
-            MTL::Buffer* visibilityBuffer = resources.GetBuffer(data.visibilityBufferHandle);
-            MTL::Buffer* executionRangeBuffer = resources.GetBuffer(data.executionRangeBufferHandle);
             MTL::Buffer* icbArgumentBuffer = resources.GetBuffer(data.icbArgumentBufferHandle);
             MTL::IndirectCommandBuffer* indirectCB = resources.GetIndirectCommandBuffer(data.indirectCBHandle);
 
+            LOG_ERROR_IF(!frameUniformBuffer, "TransparentCulling: Failed to get frame uniform buffer");
             LOG_ERROR_IF(!transparentIndexBuffer, "TransparentCulling: Failed to get transparent index buffer");
             LOG_ERROR_IF(!transparentIndexBufferInfo, "TransparentCulling: Failed to get transparent index buffer info");
             LOG_ERROR_IF(!transparentRenderPrimitives, "TransparentCulling: Failed to get transparent render primitives");
-            LOG_ERROR_IF(!visibilityBuffer, "TransparentCulling: Failed to get visibility buffer");
-            LOG_ERROR_IF(!executionRangeBuffer, "TransparentCulling: Failed to get execution range buffer");
             LOG_ERROR_IF(!icbArgumentBuffer, "TransparentCulling: Failed to get ICB argument buffer");
             LOG_ERROR_IF(!indirectCB, "TransparentCulling: Failed to get indirect command buffer");
 
-            m_argumentTable->setAddress(executionRangeBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::ExecutionRange));
+            m_argumentTable->setAddress(frameUniformBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::FrameUniform));
             m_argumentTable->setAddress(transparentIndexBufferInfo->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::IndexBufferInfo));
             m_argumentTable->setAddress(transparentRenderPrimitives->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::RenderPrimitives));
-            m_argumentTable->setAddress(visibilityBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::Visibilities));
             m_argumentTable->setAddress(icbArgumentBuffer->gpuAddress(), static_cast<NS::UInteger>(ObjectCullingBufferIndex::ICBContainer));
 
+            cmd.AddResource(frameUniformBuffer);
             cmd.AddResource(transparentIndexBuffer);
             cmd.AddResource(transparentIndexBufferInfo);
             cmd.AddResource(transparentRenderPrimitives);
-            cmd.AddResource(executionRangeBuffer);
-            cmd.AddResource(visibilityBuffer);
             cmd.AddResource(m_cullingParamsBuffer->GetNative());
             cmd.AddResource(indirectCB);
             cmd.AddResource(icbArgumentBuffer);
@@ -181,8 +164,6 @@ void TransparentObjectCullingPass::AddToGraph(RenderGraph& graph) {
             MTL4::ComputeCommandEncoder* computeEncoder = cmd.BeginComputePass();
             LOG_ERROR_IF(!computeEncoder, "TransparentCulling: Failed to create compute encoder");
 
-            computeEncoder->fillBuffer(visibilityBuffer, NS::Range(0, visibilityBuffer->length()), 0);
-            computeEncoder->fillBuffer(executionRangeBuffer, NS::Range(0, executionRangeBuffer->length()), 0);
             computeEncoder->resetCommandsInBuffer(indirectCB, NS::Range(0, m_numPrimitives));
 
             computeEncoder->barrierAfterEncoderStages(MTL::StageBlit, MTL::StageDispatch, MTL4::VisibilityOptionDevice);

@@ -26,8 +26,6 @@ public:
 private:
     struct FrameResources {
         std::unique_ptr<IndirectCommandBuffer> indirectCB;
-        std::unique_ptr<Buffer> visibilityBuffer;
-        std::unique_ptr<Buffer> executionRangeBuffer;
         std::unique_ptr<Buffer> icbArgumentBuffer;
     };
 
